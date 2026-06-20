@@ -10,29 +10,31 @@ const config: Config = {
     extend: {
       colors: {
         brand: {
-          highlight: '#DD88CF', // Highlights, KPIs, Progress
-          primary: '#4B164C',   // Text, Buttons, Primary Actions
-          hover: '#3A103B',     // Darker shade for button hover
+          highlight: '#2563eb',
+          primary: '#1e293b',
+          hover: '#0f172a',
+          accent: '#3b82f6',
         },
         surface: {
-          DEFAULT: '#F5F5F5',   // Background
-          card: '#F8E7F6',      // Cards/Surfaces
-          border: '#E8C8E5',
-          hover: '#F0D5ED',
-          input: '#FFFFFF',
+          DEFAULT: '#f1f5f9',
+          card: '#ffffff',
+          border: '#cbd5e1',
+          hover: '#e2e8f0',
+          input: '#ffffff',
+          sidebar: '#1e293b',
         },
         text: {
-          primary: '#4B164C',
-          secondary: '#754176',
-          muted: '#9A669B',
+          primary: '#0f172a',
+          secondary: '#475569',
+          muted: '#94a3b8',
+          inverse: '#f8fafc',
         },
         accent: {
-          purple: '#DD88CF',
-          blue: '#3b82f6',
-          cyan: '#06b6d4',
-          emerald: '#10b981',
-          amber: '#f59e0b',
-          rose: '#f43f5e',
+          blue: '#2563eb',
+          cyan: '#0891b2',
+          emerald: '#059669',
+          amber: '#d97706',
+          rose: '#dc2626',
         },
       },
       fontFamily: {
@@ -40,20 +42,16 @@ const config: Config = {
         mono: ['JetBrains Mono', 'monospace'],
       },
       backgroundImage: {
-        'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
-        'gradient-brand': 'linear-gradient(135deg, #DD88CF 0%, #4B164C 100%)',
+        'gradient-brand': 'linear-gradient(135deg, #1e40af 0%, #1e293b 100%)',
       },
       boxShadow: {
-        'glow-brand': '0 0 20px rgba(221, 136, 207, 0.4)',
-        'glow-sm': '0 0 10px rgba(221, 136, 207, 0.2)',
-        card: '0 4px 24px rgba(75, 22, 76, 0.06)',
-        'card-hover': '0 8px 40px rgba(75, 22, 76, 0.12)',
+        'glow-brand': '0 0 20px rgba(37, 99, 235, 0.25)',
+        card: '0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.06)',
+        'card-hover': '0 4px 12px rgba(15, 23, 42, 0.12)',
       },
       animation: {
         'fade-in': 'fadeIn 0.3s ease-out',
         'slide-up': 'slideUp 0.4s ease-out',
-        'slide-in-left': 'slideInLeft 0.3s ease-out',
-        shimmer: 'shimmer 2s linear infinite',
       },
       keyframes: {
         fadeIn: {
@@ -61,22 +59,13 @@ const config: Config = {
           to: { opacity: '1' },
         },
         slideUp: {
-          from: { opacity: '0', transform: 'translateY(20px)' },
+          from: { opacity: '0', transform: 'translateY(12px)' },
           to: { opacity: '1', transform: 'translateY(0)' },
-        },
-        slideInLeft: {
-          from: { opacity: '0', transform: 'translateX(-20px)' },
-          to: { opacity: '1', transform: 'translateX(0)' },
-        },
-        shimmer: {
-          '0%': { backgroundPosition: '-200% 0' },
-          '100%': { backgroundPosition: '200% 0' },
         },
       },
       borderRadius: {
-        xl: '1rem',
-        '2xl': '1.25rem',
-        '3xl': '1.5rem',
+        xl: '0.5rem',
+        '2xl': '0.625rem',
       },
     },
   },

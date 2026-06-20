@@ -1,4 +1,4 @@
-import { PrismaClient, UserRole, ProcurementType, ProcurementStrategy } from '@prisma/client';
+import { PrismaClient, UserRole, ProcurementType, ProcurementStrategy, ProductType } from '@prisma/client';
 import bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -63,6 +63,7 @@ async function main() {
       id: '10000000-0000-0000-0000-000000000001',
       name: 'Wooden Dining Table',
       sku: 'WDT-001',
+      productType: 'finished_good' as ProductType,
       description: '6-seater solid wood dining table',
       category: 'Furniture',
       unitOfMeasure: 'pcs',
@@ -80,6 +81,7 @@ async function main() {
       id: '10000000-0000-0000-0000-000000000002',
       name: 'Wooden Chair',
       sku: 'WCH-001',
+      productType: 'finished_good' as ProductType,
       description: 'Solid wood dining chair',
       category: 'Furniture',
       unitOfMeasure: 'pcs',
@@ -97,6 +99,7 @@ async function main() {
       id: '10000000-0000-0000-0000-000000000003',
       name: 'Wooden Bookshelf',
       sku: 'WBS-001',
+      productType: 'finished_good' as ProductType,
       description: '5-shelf solid wood bookshelf',
       category: 'Furniture',
       unitOfMeasure: 'pcs',
@@ -115,6 +118,7 @@ async function main() {
       id: '20000000-0000-0000-0000-000000000001',
       name: 'Wooden Leg (Table)',
       sku: 'RM-WL-001',
+      productType: 'raw_material' as ProductType,
       description: 'Solid teak table leg, 75cm height',
       category: 'Raw Material',
       unitOfMeasure: 'pcs',
@@ -267,10 +271,12 @@ async function main() {
   ];
 
   for (const p of productsData) {
+    const productType: ProductType =
+      p.category === 'Raw Material' ? 'raw_material' : 'finished_good';
     await prisma.product.upsert({
       where: { sku: p.sku },
-      update: {},
-      create: p,
+      update: { productType },
+      create: { ...p, productType },
     });
   }
   console.log('Products seeded.');
@@ -345,6 +351,35 @@ async function main() {
     }
   }
   console.log('BoMs seeded.');
+
+  // 4. Demo Sales Order (draft — for demo workflow)
+  const demoOrderId = '40000000-0000-0000-0000-000000000001';
+  const existingOrder = await prisma.salesOrder.findUnique({ where: { id: demoOrderId } });
+  if (!existingOrder) {
+    await prisma.salesOrder.create({
+      data: {
+        id: demoOrderId,
+        orderNumber: 'SO-001',
+        customerName: 'Rajesh Home Interiors',
+        customerEmail: 'rajesh@homeinteriors.in',
+        customerPhone: '+91 98765 43210',
+        status: 'draft',
+        notes: 'Demo order: 20 dining tables — will trigger shortage on confirm (only 5 on hand)',
+        totalAmount: 300000,
+        createdBy: '00000000-0000-0000-0000-000000000003',
+        items: {
+          create: [
+            {
+              productId: '10000000-0000-0000-0000-000000000001',
+              quantityOrdered: 20,
+              unitPrice: 15000,
+            },
+          ],
+        },
+      },
+    });
+    console.log('Demo sales order SO-001 seeded.');
+  }
 
   console.log('Database seeding complete successfully!');
 }

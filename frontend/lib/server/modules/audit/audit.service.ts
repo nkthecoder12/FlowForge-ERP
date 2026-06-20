@@ -51,6 +51,21 @@ export class AuditService {
     });
     return results.map((r) => r.action);
   }
+
+  async getById(id: string) {
+    const log = await prisma.auditLog.findUnique({
+      where: { id },
+      include: {
+        user: { select: { id: true, name: true, email: true, role: true } },
+      },
+    });
+
+    if (!log) {
+      throw Object.assign(new Error('Audit log not found'), { statusCode: 404 });
+    }
+
+    return log;
+  }
 }
 
 export const auditService = new AuditService();

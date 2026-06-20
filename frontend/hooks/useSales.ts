@@ -50,7 +50,7 @@ export const useSales = () => {
 
   const deliverMutation = useMutation({
     mutationFn: salesApi.deliver,
-    onSuccess: (data, id) => {
+    onSuccess: (_data, id) => {
       toast.success('Order delivered!');
       queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
       queryClient.invalidateQueries({ queryKey: ['sales-order', id] });
@@ -64,6 +64,20 @@ export const useSales = () => {
     },
   });
 
+  const cancelMutation = useMutation({
+    mutationFn: salesApi.cancel,
+    onSuccess: (_data, id) => {
+      toast.success('Order cancelled');
+      queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['sales-order', id] });
+      queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory-balances'] });
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to cancel order');
+    },
+  });
+
   return {
     useList,
     useGet,
@@ -73,5 +87,7 @@ export const useSales = () => {
     isConfirming: confirmMutation.isPending,
     deliver: deliverMutation.mutateAsync,
     isDelivering: deliverMutation.isPending,
+    cancel: cancelMutation.mutateAsync,
+    isCancelling: cancelMutation.isPending,
   };
 };

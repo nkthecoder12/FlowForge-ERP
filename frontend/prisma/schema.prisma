@@ -16,6 +16,11 @@ enum UserRole {
   inventory
 }
 
+enum ProductType {
+  raw_material
+  finished_good
+}
+
 enum ProcurementType {
   purchase
   manufacture
@@ -58,6 +63,7 @@ enum MovementType {
   manufacturing_produce
   stock_adjustment
   stock_reservation
+  stock_release
   reservation_release
 }
 
@@ -86,6 +92,8 @@ enum AuditAction {
   stock_adjusted
   stock_reserved
   stock_reservation_released
+  shortage_detected
+  bom_exploded
 }
 
 model User {
@@ -125,6 +133,7 @@ model Product {
   id                   String             @id @default(uuid()) @db.Uuid
   name                 String             @db.VarChar(200)
   sku                  String             @unique @db.VarChar(100)
+  productType          ProductType        @default(finished_good) @map("product_type")
   description          String?            @db.Text
   category             String?            @db.VarChar(100)
   unitOfMeasure        String             @default("pcs") @map("unit_of_measure") @db.VarChar(50)
@@ -333,6 +342,8 @@ model InventoryMovement {
   direction       Int          @db.SmallInt
   quantityBefore  Decimal      @map("quantity_before") @db.Decimal(12, 2)
   quantityAfter   Decimal      @map("quantity_after") @db.Decimal(12, 2)
+  reservedBefore  Decimal      @default(0) @map("reserved_before") @db.Decimal(12, 2)
+  reservedAfter   Decimal      @default(0) @map("reserved_after") @db.Decimal(12, 2)
   referenceSoId   String?      @map("reference_so_id") @db.Uuid
   referencePoId   String?      @map("reference_po_id") @db.Uuid
   referenceMoId   String?      @map("reference_mo_id") @db.Uuid

@@ -96,9 +96,10 @@ export default function BomPage() {
                   </div>
 
                   <div className="border-t border-surface-border/50 pt-3 flex justify-between items-center text-[10px] text-text-muted">
-                    <span className="flex items-center gap-1">
-                      Created: {format(new Date(bom.createdAt), 'MMM d, yyyy')}
-                    </span>
+                    <span>Created: {format(new Date(bom.createdAt), 'MMM d, yyyy')}</span>
+                    <Link href={`/bom/${bom.id}`} className="text-brand-highlight font-semibold hover:underline text-xs">
+                      View Details →
+                    </Link>
                   </div>
                 </div>
               ))}

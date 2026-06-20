@@ -3,8 +3,8 @@ import LoginForm from '@/components/auth/LoginForm';
 import AuthLayout from '@/components/auth/AuthLayout';
 
 export const metadata: Metadata = {
-  title: 'Login | FlowForge ERP',
-  description: 'Log in to FlowForge Enterprise Resource Planning System',
+  title: 'Login | Shiv Furniture Works ERP',
+  description: 'Log in to Shiv Furniture Works Enterprise Resource Planning System',
 };
 
 export default function LoginPage() {

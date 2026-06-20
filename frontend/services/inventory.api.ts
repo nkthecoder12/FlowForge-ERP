@@ -19,8 +19,8 @@ export interface ApiInventoryMovement {
 
 export const inventoryApi = {
   list: async (): Promise<ApiProduct[]> => {
-    const res = await api.get('/products'); // List product balances
-    return res.data.data.products;
+    const res = await api.get('/inventory');
+    return res.data.data;
   },
 
   adjustStock: async (payload: {

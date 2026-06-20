@@ -17,16 +17,34 @@ export interface DashboardStats {
     pendingSalesOrders: number;
     shortageOrders: number;
     lowStockCount: number;
+    totalInventoryValue: number;
+  };
+  inventoryHealth: {
+    healthy: number;
+    lowStock: number;
+    critical: number;
+    total: number;
   };
   lowStockProducts: {
     id: string;
     name: string;
     sku: string;
-    onHandQuantity: string | number;
-    minStockLevel: string | number;
+    onHandQuantity: number;
+    reservedQuantity: number;
+    freeQuantity: number;
+    minStockLevel: number;
     unitOfMeasure: string;
+    isLowStock: boolean;
   }[];
   recentActivity: AuditLog[];
+  recentSalesOrders: {
+    id: string;
+    orderNumber: string;
+    customerName: string;
+    status: string;
+    totalAmount: number;
+    createdAt: string;
+  }[];
 }
 
 export const dashboardApi = {

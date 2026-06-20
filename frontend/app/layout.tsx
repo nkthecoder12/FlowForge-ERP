@@ -4,8 +4,8 @@ import { Providers } from './providers';
 import { Toaster } from 'react-hot-toast';
 
 export const metadata: Metadata = {
-  title: 'FlowForge ERP',
-  description: 'Enterprise Resource Planning System',
+  title: 'Shiv Furniture Works ERP',
+  description: 'Enterprise Resource Planning for Furniture Manufacturing',
 };
 
 export default function RootLayout({

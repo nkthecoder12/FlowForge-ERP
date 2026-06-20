@@ -17,7 +17,7 @@ export default function SalesOrderDetailPage() {
   const params = useParams();
   const id = params.id as string;
   const router = useRouter();
-  const { useGet, confirm, deliver, isConfirming, isDelivering } = useSales();
+  const { useGet, confirm: confirmOrder, deliver, cancel, isConfirming, isDelivering, isCancelling } = useSales();
   const { data: order, isLoading, isError } = useGet(id);
 
   if (isLoading) {
@@ -46,7 +46,7 @@ export default function SalesOrderDetailPage() {
 
   const handleConfirmAction = async () => {
     try {
-      await confirm(id);
+      await confirmOrder(id);
     } catch {
       // Handled by toast
     }
@@ -55,6 +55,15 @@ export default function SalesOrderDetailPage() {
   const handleDeliverAction = async () => {
     try {
       await deliver(id);
+    } catch {
+      // Handled by toast
+    }
+  };
+
+  const handleCancelAction = async () => {
+    if (!window.confirm('Cancel this sales order? Reserved stock will be released.')) return;
+    try {
+      await cancel(id);
     } catch {
       // Handled by toast
     }
@@ -110,16 +119,20 @@ export default function SalesOrderDetailPage() {
           <p className="page-subtitle">Detailed allocation breakdown and delivery dispatch control</p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {(order.status === 'draft' || order.status === 'shortage_detected') && (
             <Button type="button" onClick={handleConfirmAction} isLoading={isConfirming}>
-              Run Stock Check & Confirm
+              Confirm & Check Stock
             </Button>
           )}
-
           {order.status === 'ready' && (
-            <Button type="button" className="bg-emerald-500 hover:bg-emerald-600 border-0" onClick={handleDeliverAction} isLoading={isDelivering}>
-              Ship & Deliver Order
+            <Button type="button" className="bg-emerald-600 hover:bg-emerald-700 border-0" onClick={handleDeliverAction} isLoading={isDelivering}>
+              Deliver Order
+            </Button>
+          )}
+          {!['delivered', 'cancelled'].includes(order.status) && (
+            <Button type="button" variant="danger" onClick={handleCancelAction} isLoading={isCancelling}>
+              Cancel
             </Button>
           )}
         </div>
@@ -203,7 +216,7 @@ export default function SalesOrderDetailPage() {
                             const isMissing = mat.shortage > 0;
                             return (
                               <div key={mIdx} className="flex justify-between items-center text-xs p-2.5 rounded bg-surface-input border border-surface-border/50">
-                                <span className="text-text-primary font-semibold">{mat.product}</span>
+                                <span className="text-text-primary font-semibold">{mat.productName || mat.product}</span>
                                 <div className="flex items-center gap-4">
                                   <span className="text-text-secondary text-xs">
                                     Needed: {mat.required} | Free: {mat.available}

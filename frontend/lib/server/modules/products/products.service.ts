@@ -85,6 +85,7 @@ export class ProductsService {
       data: {
         name: dto.name,
         sku: dto.sku.toUpperCase(),
+        productType: dto.productType,
         description: dto.description,
         category: dto.category,
         unitOfMeasure: dto.unitOfMeasure,
@@ -153,6 +154,7 @@ export class ProductsService {
     const data: Record<string, any> = {};
     if (dto.name) data.name = dto.name;
     if (dto.sku) data.sku = dto.sku.toUpperCase();
+    if (dto.productType) data.productType = dto.productType;
     if (dto.description !== undefined) data.description = dto.description;
     if (dto.category !== undefined) data.category = dto.category;
     if (dto.unitOfMeasure) data.unitOfMeasure = dto.unitOfMeasure;
