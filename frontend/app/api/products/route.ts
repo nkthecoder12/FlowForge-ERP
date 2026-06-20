@@ -1,6 +1,6 @@
 import { productsService } from '@/lib/server/modules/products/products.service';
 import { createProductSchema } from '@/lib/server/modules/products/products.validation';
-import { requireRole, requireAuth, isErrorResponse } from '@/lib/server/auth';
+import { requireAuth, requireRole, isErrorResponse } from '@/lib/server/auth';
 import { jsonSuccess, jsonError } from '@/lib/server/api-response';
 import { handleRoute } from '@/lib/server/handle-route';
 import type { UserRole } from '@prisma/client';
@@ -17,17 +17,12 @@ export async function GET(request: Request) {
     const page = searchParams.get('page') ? Number(searchParams.get('page')) : 1;
     const limit = searchParams.get('limit') ? Number(searchParams.get('limit')) : 20;
 
-    const productType = user.role === 'sales'
-      ? 'finished_good'
-      : (searchParams.get('productType') as 'raw_material' | 'finished_good' || undefined);
-
     const result = await productsService.list({
       search,
       category,
       procurementType,
       page,
       limit,
-      productType,
     });
 
     return jsonSuccess(result, 'Products fetched successfully');

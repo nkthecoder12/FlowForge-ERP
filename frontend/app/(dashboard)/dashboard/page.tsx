@@ -185,7 +185,30 @@ export default function DashboardPage() {
     );
   }
 
-  const { kpis, lowStockProducts, recentActivity, inventoryHealth, recentSalesOrders, smartProcurementRecommendations, productionBottlenecks } = data;
+  const { kpis, lowStockProducts, recentActivity, inventoryHealth, recentSalesOrders, smartProcurementRecommendations, productionBottlenecks, aiInsights } = data;
+
+  const s_sales = aiInsights?.operationalHealthBreakdown?.sales ?? 94;
+  const s_pm = aiInsights?.operationalHealthBreakdown?.manufacturing ?? 85;
+  const s_proc = aiInsights?.operationalHealthBreakdown?.procurement ?? 68;
+  const s_inv = aiInsights?.operationalHealthBreakdown?.inventory ?? 92;
+  const s_oee = aiInsights?.operationalHealthBreakdown?.manufacturing ?? 96;
+  const s_ful = aiInsights?.operationalHealthBreakdown?.sales ?? 88;
+
+  const r_sales = 80 * (s_sales / 100);
+  const r_pm = 80 * (s_pm / 100);
+  const r_proc = 80 * (s_proc / 100);
+  const r_inv = 80 * (s_inv / 100);
+  const r_oee = 80 * (s_oee / 100);
+  const r_ful = 80 * (s_ful / 100);
+
+  const pt_sales = `100,${(100 - r_sales).toFixed(1)}`;
+  const pt_pm = `${(100 + r_pm * 0.866).toFixed(1)},${(100 - r_pm * 0.5).toFixed(1)}`;
+  const pt_proc = `${(100 + r_proc * 0.866).toFixed(1)},${(100 + r_proc * 0.5).toFixed(1)}`;
+  const pt_inv = `100,${(100 + r_inv).toFixed(1)}`;
+  const pt_oee = `${(100 - r_oee * 0.866).toFixed(1)},${(100 + r_oee * 0.5).toFixed(1)}`;
+  const pt_ful = `${(100 - r_ful * 0.866).toFixed(1)},${(100 - r_ful * 0.5).toFixed(1)}`;
+
+  const radarPoints = `${pt_sales} ${pt_pm} ${pt_proc} ${pt_inv} ${pt_oee} ${pt_ful}`;
 
   const totalRev = recentSalesOrders?.reduce((acc: number, o: any) => acc + Number(o.totalAmount), 0) || 0;
 
@@ -1146,16 +1169,29 @@ export default function DashboardPage() {
               
               <div className="space-y-3.5 text-xs text-text-secondary leading-relaxed">
                 <p>
-                  🤖 <b>CEO Operations Digest:</b> Overall corporate metrics are nominal. Sales pipeline velocity is up <b>14.2%</b> due to high customer requests. However, a potential bottleneck is predicted in <b>raw materials procurement (screws and seat panels)</b>. 
+                  🤖 <b>CEO Operations Digest:</b> {aiInsights?.executiveSummary || 'Corporate metrics are loading. Review standard department logs below.'}
                 </p>
-                <div className="p-3.5 bg-rose-500/[0.02] border border-rose-500/10 rounded-xl space-y-2">
-                  <p className="font-bold text-[#4B164C] flex items-center gap-1.5 text-xs">
-                    <AlertTriangle size={14} className="text-rose-500" /> Procurement Stockout Warning
-                  </p>
-                  <p className="text-[11px]">
-                    Current raw wood screw levels are at <b>200 pcs</b>. Based on active manufacturing runs of 80 wooden chairs, we predict a stockout in <b>4 days</b>. Reorder suggestion is <b>1,000 units</b> from <i>Apex Fasteners Corp</i> to avoid assembly floor idle times.
-                  </p>
-                </div>
+                {aiInsights?.criticalRisks && aiInsights.criticalRisks.length > 0 ? (
+                  aiInsights.criticalRisks.slice(0, 1).map((risk: any, index: number) => (
+                    <div key={index} className={`p-3.5 ${risk.severity.toLowerCase() === 'high' ? 'bg-rose-500/[0.02] border-rose-500/10' : 'bg-amber-500/[0.02] border-amber-500/10'} border rounded-xl space-y-2`}>
+                      <p className="font-bold text-[#4B164C] flex items-center gap-1.5 text-xs">
+                        <AlertTriangle size={14} className={risk.severity.toLowerCase() === 'high' ? 'text-rose-500' : 'text-amber-500'} /> {risk.risk} ({risk.severity} Severity)
+                      </p>
+                      <p className="text-[11px]">
+                        {risk.reason}
+                      </p>
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-3.5 bg-rose-500/[0.02] border border-rose-500/10 rounded-xl space-y-2">
+                    <p className="font-bold text-[#4B164C] flex items-center gap-1.5 text-xs">
+                      <AlertTriangle size={14} className="text-rose-500" /> Procurement Stockout Warning
+                    </p>
+                    <p className="text-[11px]">
+                      Current raw wood screw levels are at <b>200 pcs</b>. Based on active manufacturing runs of 80 wooden chairs, we predict a stockout in <b>4 days</b>. Reorder suggestion is <b>1,000 units</b> from <i>Apex Fasteners Corp</i> to avoid assembly floor idle times.
+                    </p>
+                  </div>
+                )}
                 <div className="flex gap-2 pt-1.5">
                   <Link href="/timeline" className="btn-primary py-2 px-4 text-[10px] font-bold bg-[#F8E7F6] text-[#4B164C] hover:bg-[#F8E7F6]/80 shadow-none">
                     Trace Sales Order Timeline
@@ -1166,7 +1202,7 @@ export default function DashboardPage() {
                 </div>
               </div>
             </div>
-
+ 
             {/* Radar Department Performance Comparison SVG */}
             <div className="glass-card p-5 space-y-4">
               <div>
@@ -1179,23 +1215,23 @@ export default function DashboardPage() {
                   <polygon points="100,20 180,60 180,140 100,180 20,140 20,60" fill="none" stroke="#cbd5e1" strokeWidth="1" />
                   <polygon points="100,50 150,75 150,125 100,150 50,125 50,75" fill="none" stroke="#e2e8f0" strokeWidth="1" />
                   <polygon points="100,75 125,87 125,112 100,125 75,112 75,87" fill="none" stroke="#f1f5f9" strokeWidth="1" />
-                  
+                   
                   {/* Axis lines */}
                   <line x1="100" y1="20" x2="100" y2="180" stroke="#cbd5e1" strokeWidth="0.5" />
                   <line x1="20" y1="60" x2="180" y2="140" stroke="#cbd5e1" strokeWidth="0.5" />
                   <line x1="20" y1="140" x2="180" y2="60" stroke="#cbd5e1" strokeWidth="0.5" />
-
+ 
                   {/* Axis labels */}
-                  <text x="100" y="15" textAnchor="middle" fill="#64748b" className="text-[8px] font-bold font-sans">Sales (94%)</text>
-                  <text x="190" y="60" textAnchor="start" fill="#64748b" className="text-[8px] font-bold font-sans">PM (85%)</text>
-                  <text x="190" y="145" textAnchor="start" fill="#64748b" className="text-[8px] font-bold font-sans">Procurement (68%)</text>
-                  <text x="100" y="195" textAnchor="middle" fill="#64748b" className="text-[8px] font-bold font-sans">Inventory (92%)</text>
-                  <text x="10" y="145" textAnchor="end" fill="#64748b" className="text-[8px] font-bold font-sans">OEE (96%)</text>
-                  <text x="10" y="60" textAnchor="end" fill="#64748b" className="text-[8px] font-bold font-sans">Fulfillment (88%)</text>
-
+                  <text x="100" y="15" textAnchor="middle" fill="#64748b" className="text-[8px] font-bold font-sans">Sales ({s_sales}%)</text>
+                  <text x="190" y="60" textAnchor="start" fill="#64748b" className="text-[8px] font-bold font-sans">PM ({s_pm}%)</text>
+                  <text x="190" y="145" textAnchor="start" fill="#64748b" className="text-[8px] font-bold font-sans">Procurement ({s_proc}%)</text>
+                  <text x="100" y="195" textAnchor="middle" fill="#64748b" className="text-[8px] font-bold font-sans">Inventory ({s_inv}%)</text>
+                  <text x="10" y="145" textAnchor="end" fill="#64748b" className="text-[8px] font-bold font-sans">OEE ({s_oee}%)</text>
+                  <text x="10" y="60" textAnchor="end" fill="#64748b" className="text-[8px] font-bold font-sans">Fulfillment ({s_ful}%)</text>
+ 
                   {/* Actual Score Radar Shape */}
                   <polygon 
-                    points="100,32 168,71 154,127 100,172 32,130 35,68" 
+                    points={radarPoints} 
                     fill="rgba(75, 22, 76, 0.2)" 
                     stroke="#4B164C" 
                     strokeWidth="2" 

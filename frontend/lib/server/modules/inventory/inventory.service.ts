@@ -1,75 +1,88 @@
 import prisma from '@/lib/server/db';
 import { createAuditLog } from '@/lib/server/utils/auditLog';
 import type { UserRole } from '@prisma/client';
+import type {
+  InventoryAdjustInput,
+  InventoryReserveInput,
+  InventoryReleaseInput,
+} from './inventory.validation';
 
 export class InventoryService {
-  async list(role?: string) {
-    const where: Record<string, any> = { isActive: true };
-    if (role === 'sales') {
-      where.productType = 'finished_good';
+  async list() {
+    return prisma.product.findMany({
+      orderBy: { sku: 'asc' },
+    });
+  }
+
+  async movementsLedger(productId?: string) {
+    const where: Record<string, any> = {};
+    if (productId) {
+      where.productId = productId;
     }
 
-    const products = await prisma.product.findMany({
+    return prisma.inventoryMovement.findMany({
       where,
-      orderBy: { name: 'asc' },
-    });
-
-    return products.map((p) => {
-      const onHand = Number(p.onHandQuantity);
-      const reserved = Number(p.reservedQuantity);
-      return {
-        ...p,
-        freeQuantity: onHand - reserved,
-        isLowStock: onHand - reserved <= Number(p.minStockLevel),
-      };
+      include: {
+        product: true,
+        creator: { select: { name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
     });
   }
 
   async adjustStock(
-    params: { productId: string; quantity: number; notes?: string },
+    dto: InventoryAdjustInput,
     actorId: string,
     actorName: string,
     actorRole: UserRole,
   ) {
-    const { productId, quantity, notes } = params;
+    const product = await prisma.product.findUnique({
+      where: { id: dto.productId },
+    });
 
-    if (quantity === 0) {
-      throw Object.assign(new Error('Adjustment quantity cannot be zero'), { statusCode: 400 });
-    }
-
-    const product = await prisma.product.findUnique({ where: { id: productId } });
     if (!product) {
       throw Object.assign(new Error('Product not found'), { statusCode: 404 });
     }
 
-    const direction = quantity > 0 ? 1 : -1;
-    const absQty = Math.abs(quantity);
-    const onHandBefore = Number(product.onHandQuantity);
-    const onHandAfter = onHandBefore + quantity;
-    const reservedBefore = Number(product.reservedQuantity);
+    const onHand = Number(product.onHandQuantity);
+    const reserved = Number(product.reservedQuantity);
+    const newOnHand = onHand + dto.quantity;
 
-    if (onHandAfter < 0) {
-      throw Object.assign(new Error('Stock levels cannot drop below zero'), { statusCode: 400 });
+    if (newOnHand < 0) {
+      throw Object.assign(new Error('Physical stock cannot be adjusted below zero'), {
+        statusCode: 400,
+      });
+    }
+
+    if (newOnHand < reserved) {
+      throw Object.assign(
+        new Error(`Cannot adjust stock below reservation commitments. Minimum required: ${reserved}`),
+        { statusCode: 400 }
+      );
     }
 
     const result = await prisma.$transaction(async (tx) => {
       const updatedProduct = await tx.product.update({
-        where: { id: productId },
-        data: { onHandQuantity: onHandAfter },
+        where: { id: dto.productId },
+        data: { onHandQuantity: newOnHand },
       });
 
       const movement = await tx.inventoryMovement.create({
         data: {
-          productId,
+          productId: dto.productId,
           movementType: 'stock_adjustment',
-          quantity: absQty,
-          direction,
-          quantityBefore: onHandBefore,
-          quantityAfter: onHandAfter,
-          reservedBefore,
-          reservedAfter: reservedBefore,
-          notes: notes || 'Manual adjustment',
+          quantity: Math.abs(dto.quantity),
+          direction: dto.quantity > 0 ? 1 : -1,
+          quantityBefore: onHand,
+          quantityAfter: newOnHand,
+          reservedBefore: reserved,
+          reservedAfter: reserved,
+          notes: dto.notes || 'Manual stock adjustment',
           createdBy: actorId,
+        },
+        include: {
+          product: true,
+          creator: { select: { name: true } },
         },
       });
 
@@ -82,173 +95,150 @@ export class InventoryService {
       userRole: actorRole,
       action: 'stock_adjusted',
       entityType: 'product',
-      entityId: productId,
+      entityId: product.id,
       entityName: product.name,
-      oldValues: { onHandQuantity: onHandBefore },
-      newValues: { onHandQuantity: onHandAfter, notes },
+      newValues: {
+        onHandQuantity: newOnHand,
+        adjustment: dto.quantity,
+        notes: dto.notes,
+      },
     });
 
     return result;
   }
 
   async reserveStock(
-    params: {
-      productId: string;
-      quantity: number;
-      referenceSoId?: string;
-      notes?: string;
-    },
+    dto: InventoryReserveInput,
     actorId: string,
     actorName: string,
     actorRole: UserRole,
   ) {
-    const { productId, quantity, referenceSoId, notes } = params;
+    return prisma.$transaction(async (tx) => {
+      const product = await tx.product.findUnique({
+        where: { id: dto.productId },
+      });
 
-    if (quantity <= 0) {
-      throw Object.assign(new Error('Reservation quantity must be positive'), { statusCode: 400 });
-    }
+      if (!product) {
+        throw Object.assign(new Error('Product not found'), { statusCode: 404 });
+      }
 
-    const product = await prisma.product.findUnique({ where: { id: productId } });
-    if (!product) {
-      throw Object.assign(new Error('Product not found'), { statusCode: 404 });
-    }
+      const onHand = Number(product.onHandQuantity);
+      const reserved = Number(product.reservedQuantity);
+      const free = Math.max(0, onHand - reserved);
 
-    const onHand = Number(product.onHandQuantity);
-    const reserved = Number(product.reservedQuantity);
-    const free = onHand - reserved;
+      if (dto.quantity > free) {
+        throw Object.assign(
+          new Error(`Insufficient free stock available to reserve. Available: ${free}`),
+          { statusCode: 400 }
+        );
+      }
 
-    if (free < quantity) {
-      throw Object.assign(
-        new Error(`Insufficient free stock. Available: ${free}, Requested: ${quantity}`),
-        { statusCode: 400 },
-      );
-    }
+      const newReserved = reserved + dto.quantity;
 
-    const newReserved = reserved + quantity;
-
-    const result = await prisma.$transaction(async (tx) => {
       const updatedProduct = await tx.product.update({
-        where: { id: productId },
+        where: { id: dto.productId },
         data: { reservedQuantity: newReserved },
       });
 
-      const movement = await tx.inventoryMovement.create({
+      await tx.inventoryMovement.create({
         data: {
-          productId,
+          productId: dto.productId,
           movementType: 'stock_reservation',
-          quantity,
+          quantity: dto.quantity,
           direction: -1,
           quantityBefore: onHand,
           quantityAfter: onHand,
           reservedBefore: reserved,
           reservedAfter: newReserved,
-          referenceSoId: referenceSoId || null,
-          notes: notes || 'Manual stock reservation',
+          referenceSoId: dto.referenceSoId || null,
+          notes: dto.notes || `Stock reserved manually`,
           createdBy: actorId,
         },
       });
 
-      return { product: updatedProduct, movement };
-    });
+      await createAuditLog({
+        userId: actorId,
+        userName: actorName,
+        userRole: actorRole,
+        action: 'stock_reserved',
+        entityType: 'product',
+        entityId: product.id,
+        entityName: product.name,
+        newValues: {
+          reservedQuantity: newReserved,
+          quantityReserved: dto.quantity,
+          referenceSoId: dto.referenceSoId,
+        },
+      });
 
-    await createAuditLog({
-      userId: actorId,
-      userName: actorName,
-      userRole: actorRole,
-      action: 'stock_reserved',
-      entityType: 'product',
-      entityId: productId,
-      entityName: product.name,
-      newValues: { quantityReserved: quantity, referenceSoId },
+      return updatedProduct;
     });
-
-    return result;
   }
 
   async releaseStock(
-    params: {
-      productId: string;
-      quantity: number;
-      referenceSoId?: string;
-      notes?: string;
-    },
+    dto: InventoryReleaseInput,
     actorId: string,
     actorName: string,
     actorRole: UserRole,
   ) {
-    const { productId, quantity, referenceSoId, notes } = params;
+    return prisma.$transaction(async (tx) => {
+      const product = await tx.product.findUnique({
+        where: { id: dto.productId },
+      });
 
-    if (quantity <= 0) {
-      throw Object.assign(new Error('Release quantity must be positive'), { statusCode: 400 });
-    }
+      if (!product) {
+        throw Object.assign(new Error('Product not found'), { statusCode: 404 });
+      }
 
-    const product = await prisma.product.findUnique({ where: { id: productId } });
-    if (!product) {
-      throw Object.assign(new Error('Product not found'), { statusCode: 404 });
-    }
+      const onHand = Number(product.onHandQuantity);
+      const reserved = Number(product.reservedQuantity);
 
-    const onHand = Number(product.onHandQuantity);
-    const reserved = Number(product.reservedQuantity);
+      if (dto.quantity > reserved) {
+        throw Object.assign(
+          new Error(`Cannot release more stock than currently reserved. Reserved: ${reserved}`),
+          { statusCode: 400 }
+        );
+      }
 
-    if (reserved < quantity) {
-      throw Object.assign(
-        new Error(`Cannot release more than reserved. Reserved: ${reserved}, Requested: ${quantity}`),
-        { statusCode: 400 },
-      );
-    }
+      const newReserved = reserved - dto.quantity;
 
-    const newReserved = reserved - quantity;
-
-    const result = await prisma.$transaction(async (tx) => {
       const updatedProduct = await tx.product.update({
-        where: { id: productId },
+        where: { id: dto.productId },
         data: { reservedQuantity: newReserved },
       });
 
-      const movement = await tx.inventoryMovement.create({
+      await tx.inventoryMovement.create({
         data: {
-          productId,
-          movementType: 'stock_release',
-          quantity,
+          productId: dto.productId,
+          movementType: 'reservation_release',
+          quantity: dto.quantity,
           direction: 1,
           quantityBefore: onHand,
           quantityAfter: onHand,
           reservedBefore: reserved,
           reservedAfter: newReserved,
-          referenceSoId: referenceSoId || null,
-          notes: notes || 'Manual stock release',
+          referenceSoId: dto.referenceSoId || null,
+          notes: dto.notes || `Stock reservation released manually`,
           createdBy: actorId,
         },
       });
 
-      return { product: updatedProduct, movement };
-    });
+      await createAuditLog({
+        userId: actorId,
+        userName: actorName,
+        userRole: actorRole,
+        action: 'stock_reservation_released',
+        entityType: 'product',
+        entityId: product.id,
+        entityName: product.name,
+        newValues: {
+          reservedQuantity: newReserved,
+          quantityReleased: dto.quantity,
+          referenceSoId: dto.referenceSoId,
+        },
+      });
 
-    await createAuditLog({
-      userId: actorId,
-      userName: actorName,
-      userRole: actorRole,
-      action: 'stock_reservation_released',
-      entityType: 'product',
-      entityId: productId,
-      entityName: product.name,
-      newValues: { quantityReleased: quantity, referenceSoId },
-    });
-
-    return result;
-  }
-
-  async movementsLedger(productId?: string) {
-    const where: Record<string, string> = {};
-    if (productId) where.productId = productId;
-
-    return prisma.inventoryMovement.findMany({
-      where,
-      include: {
-        product: true,
-        creator: { select: { name: true } },
-      },
-      orderBy: { createdAt: 'desc' },
+      return updatedProduct;
     });
   }
 }

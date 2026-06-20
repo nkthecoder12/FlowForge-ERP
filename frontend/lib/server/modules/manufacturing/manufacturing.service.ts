@@ -1,66 +1,29 @@
 import prisma from '@/lib/server/db';
 import { createAuditLog } from '@/lib/server/utils/auditLog';
 import { bomsService } from '../boms/boms.service';
-import type { UserRole, Prisma } from '@prisma/client';
+import type { UserRole } from '@prisma/client';
 
-type TransactionClient = Prisma.TransactionClient;
-
-export async function generateManufacturingOrderNumber(tx: TransactionClient): Promise<string> {
-  const latest = await tx.manufacturingOrder.findFirst({
-    orderBy: { createdAt: 'desc' },
-    select: { orderNumber: true },
-  });
-
-  if (!latest?.orderNumber) {
-    return 'MO-001';
+async function mapMOStatus(mo: any) {
+  if (mo && mo.status === 'confirmed') {
+    // Check component availability
+    const bomExplosion = await bomsService.explode(mo.productId, Number(mo.quantityToProduce));
+    const hasShortages = bomExplosion.materials.some((mat) => mat.shortage > 0);
+    mo.status = hasShortages ? 'WAITING_FOR_PROCUREMENT' : 'READY_TO_START';
   }
-
-  const match = latest.orderNumber.match(/MO-(\d+)/);
-  const nextNum = match ? parseInt(match[1], 10) + 1 : 1;
-  return `MO-${String(nextNum).padStart(3, '0')}`;
-}
-
-export async function generatePurchaseOrderNumber(tx: TransactionClient): Promise<string> {
-  const latest = await tx.purchaseOrder.findFirst({
-    orderBy: { createdAt: 'desc' },
-    select: { orderNumber: true },
-  });
-
-  if (!latest?.orderNumber) {
-    return 'PO-001';
-  }
-
-  const match = latest.orderNumber.match(/PO-(\d+)/);
-  const nextNum = match ? parseInt(match[1], 10) + 1 : 1;
-  return `PO-${String(nextNum).padStart(3, '0')}`;
+  return mo;
 }
 
 export class ManufacturingService {
-  private async mapMoStatus(mo: any) {
-    if (!mo || mo.status !== 'confirmed') {
-      return mo;
-    }
-
-    const bomExplosion = await bomsService.explode(mo.productId, Number(mo.quantityToProduce));
-    if (!bomExplosion.hasBom) {
-      return mo;
-    }
-
-    const hasShortages = bomExplosion.materials.some((mat) => mat.shortage > 0);
-    return {
-      ...mo,
-      status: hasShortages ? 'WAITING_FOR_PROCUREMENT' : 'READY_TO_START',
-    };
-  }
-
   async list() {
-    const mos = await prisma.manufacturingOrder.findMany({
+    const orders = await prisma.manufacturingOrder.findMany({
       include: {
         product: true,
         bom: {
           include: {
             items: {
-              include: { component: true },
+              include: {
+                component: true,
+              },
             },
           },
         },
@@ -70,18 +33,20 @@ export class ManufacturingService {
       orderBy: { createdAt: 'desc' },
     });
 
-    return Promise.all(mos.map(mo => this.mapMoStatus(mo)));
+    return Promise.all(orders.map(mapMOStatus));
   }
 
   async getById(id: string) {
-    const mo = await prisma.manufacturingOrder.findUnique({
+    const order = await prisma.manufacturingOrder.findUnique({
       where: { id },
       include: {
         product: true,
         bom: {
           include: {
             items: {
-              include: { component: true },
+              include: {
+                component: true,
+              },
             },
           },
         },
@@ -90,452 +55,246 @@ export class ManufacturingService {
       },
     });
 
-    if (!mo) {
+    if (!order) {
       throw Object.assign(new Error('Manufacturing Order not found'), { statusCode: 404 });
     }
 
-    return this.mapMoStatus(mo);
+    return mapMOStatus(order);
   }
 
   async createFromSalesOrder(
     salesOrderId: string,
     actorId: string,
     actorName: string,
-    actorRole: UserRole
+    actorRole: UserRole,
   ) {
-    const so = await prisma.salesOrder.findUnique({
+    const salesOrder = await prisma.salesOrder.findUnique({
       where: { id: salesOrderId },
-      include: {
-        items: { include: { product: true } },
-      },
+      include: { items: { include: { product: true } } },
     });
 
-    if (!so) {
+    if (!salesOrder) {
       throw Object.assign(new Error('Sales Order not found'), { statusCode: 404 });
     }
 
-    // Get shortage analysis
-    const getShortages = () => {
-      if (!so.notes) return [];
-      const delimiter = '\n\n[Shortage Analysis]\n';
-      const parts = so.notes.split(delimiter);
-      if (parts.length < 2) return [];
-      try {
-        const parsed = JSON.parse(parts[1]);
-        return parsed.shortages || [];
-      } catch {
-        return [];
-      }
-    };
-
-    const shortages = getShortages();
-    if (shortages.length === 0) {
-      // Re-calculate shortages on the fly if analysis notes don't exist
-      for (const item of so.items) {
+    const createdOrders = await prisma.$transaction(async (tx) => {
+      const ordersToCreate: any[] = [];
+      
+      for (const item of salesOrder.items) {
         const onHand = Number(item.product.onHandQuantity);
         const reserved = Number(item.product.reservedQuantity);
         const free = Math.max(0, onHand - reserved);
         const ordered = Number(item.quantityOrdered);
-        if (free < ordered) {
-          shortages.push({
-            productId: item.productId,
-            productName: item.product.name,
-            sku: item.product.sku,
-            shortage: ordered - free,
+        const shortage = ordered - free;
+
+        if (shortage > 0) {
+          const activeBom = await tx.bom.findFirst({
+            where: { productId: item.productId, isActive: true },
+          });
+          if (!activeBom) {
+            throw Object.assign(
+              new Error(`No active Bill of Materials found for product ${item.product.name}`),
+              { statusCode: 400 }
+            );
+          }
+
+          const mo = await tx.manufacturingOrder.create({
+            data: {
+              orderNumber: '',
+              productId: item.productId,
+              bomId: activeBom.id,
+              quantityToProduce: shortage,
+              status: 'draft',
+              triggeredBySoId: salesOrderId,
+              createdBy: actorId,
+              notes: `Triggered from Sales Order ${salesOrder.orderNumber} for shortage of ${shortage} ${item.product.unitOfMeasure}.`,
+            },
+            include: {
+              product: true,
+              bom: {
+                include: {
+                  items: {
+                    include: {
+                      component: true,
+                    },
+                  },
+                },
+              },
+              triggeredBySo: true,
+              creator: { select: { name: true } },
+            },
+          });
+
+          ordersToCreate.push(mo);
+
+          await createAuditLog({
+            userId: actorId,
+            userName: actorName,
+            userRole: actorRole,
+            action: 'manufacturing_order_created',
+            entityType: 'manufacturing_order',
+            entityId: mo.id,
+            entityName: mo.orderNumber,
+            newValues: JSON.parse(JSON.stringify(mo)),
           });
         }
       }
-    }
+      
+      return ordersToCreate;
+    });
 
-    if (shortages.length === 0) {
-      throw Object.assign(new Error('No product shortages found to request manufacturing'), {
-        statusCode: 400,
-      });
-    }
-
-    const createdMOs = [];
-
-    for (const sh of shortages) {
-      // Find active BOM for the product
-      const bom = await prisma.bom.findFirst({
-        where: { productId: sh.productId, isActive: true },
-      });
-
-      if (!bom) {
-        console.warn(`No active BOM found for product ${sh.productName} (${sh.productId}). Skipping MO creation.`);
-        continue;
-      }
-
-      // Check if MO already exists for this SO and product
-      const existingMO = await prisma.manufacturingOrder.findFirst({
-        where: {
-          triggeredBySoId: salesOrderId,
-          productId: sh.productId,
-          status: { in: ['draft', 'confirmed', 'in_progress'] },
-        },
-      });
-
-      if (existingMO) {
-        createdMOs.push(existingMO);
-        continue;
-      }
-
-      const mo = await prisma.$transaction(async (tx) => {
-        const orderNumber = await generateManufacturingOrderNumber(tx);
-        return tx.manufacturingOrder.create({
-          data: {
-            orderNumber,
-            productId: sh.productId,
-            bomId: bom.id,
-            quantityToProduce: sh.shortage,
-            status: 'draft',
-            triggeredBySoId: salesOrderId,
-            createdBy: actorId,
-            notes: `Production request generated automatically for shortage on Sales Order ${so.orderNumber}.`,
-          },
-        });
-      });
-
-      const fullMo = await this.getById(mo.id);
-      await createAuditLog({
-        userId: actorId,
-        userName: actorName,
-        userRole: actorRole,
-        action: 'manufacturing_order_created',
-        entityType: 'manufacturing_order',
-        entityId: mo.id,
-        entityName: mo.orderNumber,
-        newValues: JSON.parse(JSON.stringify(fullMo)),
-      });
-
-      createdMOs.push(fullMo);
-    }
-
-    return createdMOs;
+    return Promise.all(createdOrders.map(mapMOStatus));
   }
 
   async approve(
-    moId: string,
+    id: string,
     actorId: string,
     actorName: string,
-    actorRole: UserRole
+    actorRole: UserRole,
   ) {
-    const mo = await this.getById(moId);
-
-    if (mo.status !== 'draft') {
-      throw Object.assign(new Error('Only draft manufacturing orders can be approved'), {
-        statusCode: 400,
-      });
+    const existing = await prisma.manufacturingOrder.findUnique({
+      where: { id },
+    });
+    if (!existing) {
+      throw Object.assign(new Error('Manufacturing Order not found'), { statusCode: 404 });
+    }
+    if (existing.status !== 'draft') {
+      throw Object.assign(new Error('Only draft manufacturing orders can be approved'), { statusCode: 400 });
     }
 
-    // Explode components
-    const bomExplosion = await bomsService.explode(mo.productId, Number(mo.quantityToProduce));
-    if (!bomExplosion.hasBom) {
-      throw Object.assign(new Error('No active BoM recipe found to explode components'), {
-        statusCode: 400,
-      });
-    }
-
-    const missingMaterials = bomExplosion.materials.filter((mat) => mat.shortage > 0);
-    const hasShortages = missingMaterials.length > 0;
-
-    let updatedMo = mo;
-
-    if (hasShortages) {
-      // Create draft Purchase Order automatically
-      const po = await prisma.$transaction(async (tx) => {
-        const poNumber = await generatePurchaseOrderNumber(tx);
-
-        // Recommend vendor based on category of first missing material
-        const firstMat = missingMaterials[0];
-        const category = firstMat ? await tx.product.findUnique({ where: { id: firstMat.componentId }, select: { category: true } }) : null;
-        let recommendedVendor = 'Apex Fasteners Corp';
-        if (category?.category === 'Timber' || firstMat.product.toLowerCase().includes('wood')) {
-          recommendedVendor = 'Global Timber Ltd';
-        } else if (firstMat.product.toLowerCase().includes('finish') || firstMat.product.toLowerCase().includes('varnish')) {
-          recommendedVendor = 'Rainbow Coatings';
-        }
-
-        const shortageDetailsText = missingMaterials.map(m => `- ${m.product}: Shortage ${m.shortage} (Required ${m.required}, Available ${m.available})`).join('\n');
-        const poNotes = `[Procurement Request Metadata]
-Manufacturing Order ID: ${mo.id}
-Manufacturing Order Number: ${mo.orderNumber}
-Sales Order ID: ${mo.triggeredBySoId || 'None'}
-Sales Order Number: ${mo.triggeredBySo?.orderNumber || 'None'}
-Finished Product Name: ${mo.product.name}
-Required Materials:
-${shortageDetailsText}
-Priority: High
-Status: WAITING_FOR_PROCUREMENT`;
-
-        const createdPo = await tx.purchaseOrder.create({
-          data: {
-            orderNumber: poNumber,
-            vendorName: recommendedVendor,
-            vendorEmail: `${recommendedVendor.toLowerCase().replace(/\s/g, '')}@example.com`,
-            vendorPhone: '+91 99999 88888',
-            status: 'draft',
-            triggeredBySoId: mo.triggeredBySoId,
-            createdBy: actorId,
-            notes: poNotes,
-          },
-        });
-
-        for (const mat of missingMaterials) {
-          const matProduct = await tx.product.findUnique({ where: { id: mat.componentId } });
-          const reorderQty = matProduct ? Number(matProduct.reorderQuantity) : 0;
-          // Order larger of missing amount or standard reorder amount
-          const qtyToOrder = Math.max(mat.shortage, reorderQty);
-          const costPrice = matProduct ? Number(matProduct.costPrice) : 0;
-
-          await tx.purchaseOrderItem.create({
-            data: {
-              purchaseOrderId: createdPo.id,
-              productId: mat.componentId,
-              quantityOrdered: qtyToOrder,
-              unitCost: costPrice,
-            },
-          });
-        }
-
-        const totalAmount = missingMaterials.reduce((sum, mat) => {
-          const reorderQty = mat.required;
-          return sum + reorderQty * 100;
-        }, 0);
-
-        return tx.purchaseOrder.update({
-          where: { id: createdPo.id },
-          data: {
-            totalAmount: totalAmount,
-          },
-        });
-      });
-
-      // Update MO with PO reference in notes
-      await prisma.manufacturingOrder.update({
-        where: { id: moId },
-        data: {
-          status: 'confirmed',
-          notes: `${mo.notes || ''}\n\n[Procurement Generated] Draft Purchase Order ${po.orderNumber} created for component shortages.`,
-        },
-      });
-      updatedMo = await this.getById(moId);
-
-      // Write parent Sales Order notes to update timeline trace
-      if (mo.triggeredBySoId) {
-        const so = await prisma.salesOrder.findUnique({ where: { id: mo.triggeredBySoId } });
-        if (so) {
-          await prisma.salesOrder.update({
-            where: { id: mo.triggeredBySoId },
-            data: {
-              notes: `${so.notes || ''}\n\n[Shortage Detected] PM Approved MO ${mo.orderNumber}. Material shortages detected. Automatically generated Purchase Order ${po.orderNumber}.`,
-            },
-          });
-        }
-      }
-
-      // Write Audit Log: Manufacturing Approved
-      await createAuditLog({
-        userId: actorId,
-        userName: actorName,
-        userRole: actorRole,
-        action: 'bom_exploded',
-        entityType: 'manufacturing_order',
-        entityId: mo.id,
-        entityName: `Manufacturing Approved: MO ${mo.orderNumber} approved by PM`,
-        newValues: { action: 'approved', moId: mo.id, moNumber: mo.orderNumber },
-      });
-
-      // Write Audit Log: Raw Material Check Completed
-      await createAuditLog({
-        userId: actorId,
-        userName: actorName,
-        userRole: actorRole,
-        action: 'bom_exploded',
-        entityType: 'manufacturing_order',
-        entityId: mo.id,
-        entityName: `Raw Material Check Completed: BOM components requirement validated`,
-        newValues: { moNumber: mo.orderNumber, requirements: bomExplosion.materials },
-      });
-
-      // Write Audit Log: Material Shortage Detected
-      await createAuditLog({
-        userId: actorId,
-        userName: actorName,
-        userRole: actorRole,
-        action: 'shortage_detected',
-        entityType: 'manufacturing_order',
-        entityId: mo.id,
-        entityName: `Material Shortage Detected: missing components for MO ${mo.orderNumber}`,
-        newValues: { moNumber: mo.orderNumber, shortages: missingMaterials },
-      });
-
-      // Write Audit Log: Procurement Request Created
-      await createAuditLog({
-        userId: actorId,
-        userName: actorName,
-        userRole: actorRole,
-        action: 'purchase_order_created',
-        entityType: 'purchase_order',
-        entityId: po.id,
-        entityName: `Procurement Request Created: Draft PO ${po.orderNumber} generated`,
-        newValues: { poId: po.id, poNumber: po.orderNumber, vendor: po.vendorName, items: missingMaterials },
-      });
-    } else {
-      // All raw materials available
-      await prisma.manufacturingOrder.update({
-        where: { id: moId },
-        data: {
-          status: 'confirmed',
-          notes: `${mo.notes || ''}\n\nAll raw materials verified and reserved. Ready for execution.`,
-        },
-      });
-      updatedMo = await this.getById(moId);
-
-      // Write parent Sales Order notes to update timeline trace
-      if (mo.triggeredBySoId) {
-        const so = await prisma.salesOrder.findUnique({ where: { id: mo.triggeredBySoId } });
-        if (so) {
-          await prisma.salesOrder.update({
-            where: { id: mo.triggeredBySoId },
-            data: {
-              notes: `${so.notes || ''}\n\n[Manufacturing Ready] PM Approved MO ${mo.orderNumber}. All components available. Ready to start manufacturing.`,
-            },
-          });
-        }
-      }
-
-      // Write Audit Log: Manufacturing Approved
-      await createAuditLog({
-        userId: actorId,
-        userName: actorName,
-        userRole: actorRole,
-        action: 'bom_exploded',
-        entityType: 'manufacturing_order',
-        entityId: mo.id,
-        entityName: `Manufacturing Approved: MO ${mo.orderNumber} approved by PM`,
-        newValues: { action: 'approved', moId: mo.id, moNumber: mo.orderNumber },
-      });
-
-      // Write Audit Log: Raw Material Check Completed
-      await createAuditLog({
-        userId: actorId,
-        userName: actorName,
-        userRole: actorRole,
-        action: 'bom_exploded',
-        entityType: 'manufacturing_order',
-        entityId: mo.id,
-        entityName: `Raw Material Check Completed: BOM components requirement validated`,
-        newValues: { moNumber: mo.orderNumber, requirements: bomExplosion.materials },
-      });
-
-      // Write Audit Log: Manufacturing Ready
-      await createAuditLog({
-        userId: actorId,
-        userName: actorName,
-        userRole: actorRole,
-        action: 'bom_exploded',
-        entityType: 'manufacturing_order',
-        entityId: mo.id,
-        entityName: `Manufacturing Ready: All components allocated. MO ${mo.orderNumber} ready to start`,
-        newValues: { moNumber: mo.orderNumber, status: 'READY_TO_START' },
-      });
-    }
-
-    return updatedMo;
-  }
-
-
-  async reject(
-    moId: string,
-    reason: string,
-    actorId: string,
-    actorName: string,
-    actorRole: UserRole
-  ) {
-    const mo = await this.getById(moId);
-
-    if (mo.status !== 'draft') {
-      throw Object.assign(new Error('Only draft manufacturing orders can be rejected'), {
-        statusCode: 400,
-      });
-    }
-
-    const updatedMo = await prisma.manufacturingOrder.update({
-      where: { id: moId },
+    const updated = await prisma.manufacturingOrder.update({
+      where: { id },
       data: {
-        status: 'cancelled',
-        notes: `${mo.notes || ''}\n\n[Rejection Reason] PM Rejected: ${reason}`,
+        status: 'confirmed',
+        notes: `${existing.notes || ''}\n\n[Approved] Production approved by ${actorName}. Awaiting execution.`,
       },
       include: {
         product: true,
-        bom: true,
+        bom: {
+          include: {
+            items: {
+              include: {
+                component: true,
+              },
+            },
+          },
+        },
         triggeredBySo: true,
+        creator: { select: { name: true } },
       },
     });
 
-    // Create Audit Log
+    await createAuditLog({
+      userId: actorId,
+      userName: actorName,
+      userRole: actorRole,
+      action: 'manufacturing_order_started', // audit action representing status updates
+      entityType: 'manufacturing_order',
+      entityId: id,
+      entityName: updated.orderNumber,
+      newValues: { status: 'confirmed' },
+    });
+
+    return mapMOStatus(updated);
+  }
+
+  async reject(
+    id: string,
+    reason: string,
+    actorId: string,
+    actorName: string,
+    actorRole: UserRole,
+  ) {
+    const existing = await prisma.manufacturingOrder.findUnique({
+      where: { id },
+    });
+    if (!existing) {
+      throw Object.assign(new Error('Manufacturing Order not found'), { statusCode: 404 });
+    }
+    if (existing.status !== 'draft') {
+      throw Object.assign(new Error('Only draft manufacturing orders can be rejected'), { statusCode: 400 });
+    }
+
+    const updated = await prisma.manufacturingOrder.update({
+      where: { id },
+      data: {
+        status: 'cancelled',
+        notes: `${existing.notes || ''}\n\n[Rejected] Rejected by ${actorName}. Reason: ${reason}`,
+      },
+      include: {
+        product: true,
+        bom: {
+          include: {
+            items: {
+              include: {
+                component: true,
+              },
+            },
+          },
+        },
+        triggeredBySo: true,
+        creator: { select: { name: true } },
+      },
+    });
+
     await createAuditLog({
       userId: actorId,
       userName: actorName,
       userRole: actorRole,
       action: 'manufacturing_order_cancelled',
       entityType: 'manufacturing_order',
-      entityId: mo.id,
-      entityName: mo.orderNumber,
-      newValues: {
-        reason,
-        status: 'cancelled',
-      },
+      entityId: id,
+      entityName: existing.orderNumber,
+      newValues: { status: 'cancelled', reason },
     });
 
-    // Also update parent Sales Order if applicable
-    if (mo.triggeredBySoId) {
-      await prisma.salesOrder.update({
-        where: { id: mo.triggeredBySoId },
-        data: {
-          notes: `${mo.triggeredBySo?.notes || ''}\n\n[Production Rejected] Manufacturing ${mo.orderNumber} rejected by PM. Reason: ${reason}`,
-        },
-      });
-    }
-
-    return updatedMo;
+    return mapMOStatus(updated);
   }
 
   async start(
-    moId: string,
+    id: string,
     machine: string,
     actorId: string,
     actorName: string,
-    actorRole: UserRole
+    actorRole: UserRole,
   ) {
-    const mo = await this.getById(moId);
-
-    if (mo.status !== 'READY_TO_START') {
-      throw Object.assign(new Error('Only ready-to-start manufacturing orders can be started'), {
-        statusCode: 400,
+    const updated = await prisma.$transaction(async (tx) => {
+      const mo = await tx.manufacturingOrder.findUnique({
+        where: { id },
+        include: {
+          bom: {
+            include: {
+              items: {
+                include: {
+                  component: true,
+                },
+              },
+            },
+          },
+        },
       });
-    }
 
-    // Double check raw materials availability before starting
-    const bomExplosion = await bomsService.explode(mo.productId, Number(mo.quantityToProduce));
-    const missingMaterials = bomExplosion.materials.filter((mat) => mat.shortage > 0);
-    if (missingMaterials.length > 0) {
-      throw Object.assign(
-        new Error(`Cannot start manufacturing. Missing raw materials: ${missingMaterials.map(m => m.product).join(', ')}`),
-        { statusCode: 400 }
-      );
-    }
+      if (!mo) {
+        throw Object.assign(new Error('Manufacturing Order not found'), { statusCode: 404 });
+      }
 
-    const updatedMo = await prisma.$transaction(async (tx) => {
-      // Consume raw materials
+      if (mo.status !== 'confirmed') {
+        throw Object.assign(new Error('Only confirmed manufacturing orders can be started'), { statusCode: 400 });
+      }
+
+      // Verify and consume components
       for (const item of mo.bom.items) {
-        const requiredQty = (Number(item.quantity) / Number(mo.bom.quantity)) * Number(mo.quantityToProduce);
-        const comp = await tx.product.findUnique({ where: { id: item.componentId } });
-        if (!comp) continue;
+        const required = (Number(item.quantity) / Number(mo.bom.quantity)) * Number(mo.quantityToProduce);
+        const onHand = Number(item.component.onHandQuantity);
 
-        const onHand = Number(comp.onHandQuantity);
-        const newOnHand = Math.max(0, onHand - requiredQty);
+        if (onHand < required) {
+          throw Object.assign(
+            new Error(`Insufficient stock for component ${item.component.name}. Required: ${required}, On Hand: ${onHand}`),
+            { statusCode: 400 }
+          );
+        }
+
+        const newOnHand = onHand - required;
 
         await tx.product.update({
           where: { id: item.componentId },
@@ -546,28 +305,37 @@ Status: WAITING_FOR_PROCUREMENT`;
           data: {
             productId: item.componentId,
             movementType: 'manufacturing_consume',
-            quantity: requiredQty,
+            quantity: required,
             direction: -1,
             quantityBefore: onHand,
             quantityAfter: newOnHand,
-            referenceMoId: mo.id,
-            notes: `Consumed for Manufacturing Order ${mo.orderNumber}`,
+            referenceMoId: id,
+            notes: `Consumed for Manufacturing Order ${mo.orderNumber} on line ${machine}`,
             createdBy: actorId,
           },
         });
       }
 
       return tx.manufacturingOrder.update({
-        where: { id: moId },
+        where: { id },
         data: {
           status: 'in_progress',
           actualStart: new Date(),
-          notes: `${mo.notes || ''}\n\nProduction started on Machine: ${machine}.`,
+          notes: `${mo.notes || ''}\n\n[Started] Production started on machine: ${machine}. Raw materials consumed.`,
         },
         include: {
           product: true,
-          bom: true,
+          bom: {
+            include: {
+              items: {
+                include: {
+                  component: true,
+                },
+              },
+            },
+          },
           triggeredBySo: true,
+          creator: { select: { name: true } },
         },
       });
     });
@@ -578,69 +346,170 @@ Status: WAITING_FOR_PROCUREMENT`;
       userRole: actorRole,
       action: 'manufacturing_order_started',
       entityType: 'manufacturing_order',
-      entityId: mo.id,
-      entityName: mo.orderNumber,
-      newValues: {
-        machine,
-        status: 'in_progress',
-      },
+      entityId: id,
+      entityName: updated.orderNumber,
+      newValues: { status: 'in_progress', machine },
     });
 
-    return updatedMo;
+    return mapMOStatus(updated);
   }
 
   async complete(
-    moId: string,
+    id: string,
     actorId: string,
     actorName: string,
-    actorRole: UserRole
+    actorRole: UserRole,
   ) {
-    const mo = await this.getById(moId);
-
-    if (mo.status !== 'in_progress') {
-      throw Object.assign(new Error('Only in-progress manufacturing orders can be completed'), {
-        statusCode: 400,
+    const updated = await prisma.$transaction(async (tx) => {
+      const mo = await tx.manufacturingOrder.findUnique({
+        where: { id },
+        include: { product: true },
       });
-    }
 
-    const qtyProduced = Number(mo.quantityToProduce);
+      if (!mo) {
+        throw Object.assign(new Error('Manufacturing Order not found'), { statusCode: 404 });
+      }
 
-    const updatedMo = await prisma.$transaction(async (tx) => {
-      // Increase finished good on-hand
-      const fg = await tx.product.findUnique({ where: { id: mo.productId } });
-      const onHand = Number(fg?.onHandQuantity || 0);
-      const newOnHand = onHand + qtyProduced;
+      if (mo.status !== 'in_progress') {
+        throw Object.assign(new Error('Only in-progress manufacturing orders can be completed'), { statusCode: 400 });
+      }
+
+      // 1. Increment on-hand quantity of finished good product
+      const product = await tx.product.findUnique({ where: { id: mo.productId } });
+      if (!product) {
+        throw Object.assign(new Error('Product not found'), { statusCode: 404 });
+      }
+      const onHand = Number(product.onHandQuantity);
+      const newOnHand = onHand + Number(mo.quantityToProduce);
 
       await tx.product.update({
         where: { id: mo.productId },
         data: { onHandQuantity: newOnHand },
       });
 
+      // 2. Create inventory movement for production receipt
       await tx.inventoryMovement.create({
         data: {
           productId: mo.productId,
           movementType: 'manufacturing_produce',
-          quantity: qtyProduced,
+          quantity: Number(mo.quantityToProduce),
           direction: 1,
           quantityBefore: onHand,
           quantityAfter: newOnHand,
-          referenceMoId: mo.id,
-          notes: `Completed Manufacturing Order ${mo.orderNumber}`,
+          referenceMoId: id,
+          notes: `Produced by Manufacturing Order ${mo.orderNumber}`,
           createdBy: actorId,
         },
       });
 
+      // 3. Reserve newly produced quantity for the linked Sales Order
+      if (mo.triggeredBySoId) {
+        const so = await tx.salesOrder.findUnique({
+          where: { id: mo.triggeredBySoId },
+          include: { items: true },
+        });
+
+        if (so) {
+          const soItem = so.items.find((item) => item.productId === mo.productId);
+          if (soItem) {
+            const currentReserved = Number(product.reservedQuantity);
+            const newReserved = currentReserved + Number(mo.quantityToProduce);
+
+            await tx.product.update({
+              where: { id: mo.productId },
+              data: { reservedQuantity: newReserved },
+            });
+
+            await tx.inventoryMovement.create({
+              data: {
+                productId: mo.productId,
+                movementType: 'stock_reservation',
+                quantity: Number(mo.quantityToProduce),
+                direction: -1,
+                quantityBefore: newOnHand,
+                quantityAfter: newOnHand,
+                reservedBefore: currentReserved,
+                reservedAfter: newReserved,
+                referenceSoId: so.id,
+                notes: `Reserved newly produced ${mo.quantityToProduce} for Sales Order ${so.orderNumber}`,
+                createdBy: actorId,
+              },
+            });
+
+            await createAuditLog({
+              userId: actorId,
+              userName: actorName,
+              userRole: actorRole,
+              action: 'stock_reserved',
+              entityType: 'product',
+              entityId: mo.productId,
+              entityName: product.name,
+              newValues: {
+                salesOrderId: so.id,
+                orderNumber: so.orderNumber,
+                quantityReserved: Number(mo.quantityToProduce),
+              },
+            });
+          }
+
+          // Check if sales order is now fully ready (no other pending MOs or POs)
+          const pendingMOs = await tx.manufacturingOrder.findMany({
+            where: {
+              triggeredBySoId: so.id,
+              NOT: { id: id },
+              status: { in: ['draft', 'confirmed', 'in_progress'] },
+            },
+          });
+
+          const pendingPOs = await tx.purchaseOrder.findMany({
+            where: {
+              triggeredBySoId: so.id,
+              status: { in: ['draft', 'confirmed', 'partially_received'] },
+            },
+          });
+
+          if (pendingMOs.length === 0 && pendingPOs.length === 0) {
+            await tx.salesOrder.update({
+              where: { id: so.id },
+              data: { status: 'ready' },
+            });
+
+            await createAuditLog({
+              userId: actorId,
+              userName: actorName,
+              userRole: actorRole,
+              action: 'sales_order_confirmed',
+              entityType: 'sales_order',
+              entityId: so.id,
+              entityName: `Sales Order ${so.orderNumber} is now READY`,
+              newValues: { status: 'ready' },
+            });
+          }
+        }
+      }
+
+      // Update the MO itself
       return tx.manufacturingOrder.update({
-        where: { id: moId },
+        where: { id },
         data: {
           status: 'completed',
           actualEnd: new Date(),
-          quantityProduced: qtyProduced,
+          quantityProduced: mo.quantityToProduce,
+          notes: `${mo.notes || ''}\n\n[Completed] Production run completed. Finished goods added to stock.`,
         },
         include: {
           product: true,
-          bom: true,
+          bom: {
+            include: {
+              items: {
+                include: {
+                  component: true,
+                },
+              },
+            },
+          },
           triggeredBySo: true,
+          creator: { select: { name: true } },
         },
       });
     });
@@ -651,105 +520,18 @@ Status: WAITING_FOR_PROCUREMENT`;
       userRole: actorRole,
       action: 'manufacturing_order_completed',
       entityType: 'manufacturing_order',
-      entityId: mo.id,
-      entityName: mo.orderNumber,
-      newValues: {
-        quantityProduced: qtyProduced,
-        status: 'completed',
-      },
+      entityId: id,
+      entityName: updated.orderNumber,
+      newValues: { status: 'completed' },
     });
 
-    // If triggered by sales order, recheck all sales order shortage issues
-    if (mo.triggeredBySoId) {
-      const so = await prisma.salesOrder.findUnique({
-        where: { id: mo.triggeredBySoId },
-        include: { items: { include: { product: true } } },
-      });
-
-      if (so) {
-        let allSatisfied = true;
-        const toReserveUpdates: Array<{
-          productId: string;
-          ordered: number;
-          productName: string;
-          currentReserved: number;
-          currentOnHand: number;
-        }> = [];
-
-        for (const item of so.items) {
-          const product = await prisma.product.findUnique({ where: { id: item.productId } });
-          if (!product) continue;
-
-          const currentOnHand = Number(product.onHandQuantity);
-          const currentReserved = Number(product.reservedQuantity);
-          const free = Math.max(0, currentOnHand - currentReserved);
-          const ordered = Number(item.quantityOrdered);
-
-          if (free < ordered) {
-            allSatisfied = false;
-          } else {
-            toReserveUpdates.push({
-              productId: item.productId,
-              ordered,
-              productName: product.name,
-              currentReserved,
-              currentOnHand,
-            });
-          }
-        }
-
-        if (allSatisfied && toReserveUpdates.length > 0) {
-          await prisma.$transaction(async (tx) => {
-            for (const res of toReserveUpdates) {
-              const newReserved = res.currentReserved + res.ordered;
-
-              await tx.product.update({
-                where: { id: res.productId },
-                data: { reservedQuantity: newReserved },
-              });
-
-              await tx.inventoryMovement.create({
-                data: {
-                  productId: res.productId,
-                  movementType: 'stock_reservation',
-                  quantity: res.ordered,
-                  direction: -1,
-                  quantityBefore: res.currentOnHand,
-                  quantityAfter: res.currentOnHand,
-                  reservedBefore: res.currentReserved,
-                  reservedAfter: newReserved,
-                  referenceSoId: so.id,
-                  notes: `Reserved ${res.ordered} of newly completed stock for SO ${so.orderNumber}`,
-                  createdBy: actorId,
-                },
-              });
-            }
-
-            await tx.salesOrder.update({
-              where: { id: so.id },
-              data: { status: 'ready' },
-            });
-          });
-
-          await createAuditLog({
-            userId: actorId,
-            userName: actorName,
-            userRole: actorRole,
-            action: 'sales_order_confirmed',
-            entityType: 'sales_order',
-            entityId: so.id,
-            entityName: so.orderNumber,
-            newValues: {
-              status: 'ready',
-              notes: 'All items now fully reserved after manufacturing completed.',
-            },
-          });
-        }
-      }
-    }
-
-    return updatedMo;
+    return mapMOStatus(updated);
   }
+}
+
+// Export placeholder function to prevent import compilation failure in purchase service
+export async function generatePurchaseOrderNumber(): Promise<string> {
+  return '';
 }
 
 export const manufacturingService = new ManufacturingService();

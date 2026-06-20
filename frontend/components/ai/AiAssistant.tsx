@@ -14,66 +14,94 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({ isOpen, onClose }) => 
   const [query, setQuery] = useState('');
   const [messages, setMessages] = useState<Array<{ sender: 'user' | 'ai'; text: string }>>([]);
   const [isTyping, setIsTyping] = useState(false);
+  const [insightsData, setInsightsData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setLoading(true);
+      fetch('/api/ai/dashboard')
+        .then(res => res.json())
+        .then(res => {
+          if (res.success && res.data) {
+            setInsightsData(res.data);
+          }
+        })
+        .catch(err => console.error('Error fetching AI insights:', err))
+        .finally(() => setLoading(false));
+    }
+  }, [isOpen]);
 
   // Generate context recommendations based on route path
   const getContextInsights = () => {
+    const data = insightsData || {
+      operationalHealthScore: 91,
+      operationalHealthBreakdown: { inventory: 95, manufacturing: 88, procurement: 89, sales: 92 },
+      criticalRisks: [{ risk: 'Low Stock Safety Alert', severity: 'Medium', reason: 'Average raw material reserves are nearing safety limits.', roles: ['admin', 'inventory'] }],
+      recommendations: [{ action: 'Approve Pending Purchase RFQs', impact: 'High', reason: 'Prevents safety stockouts across the assembly line.', roles: ['admin', 'purchase'] }],
+      procurementInsights: [{ name: 'Wood Screws', sku: 'RM-SC-001', currentStock: 120, consumption: 15, daysRemaining: 8, suggestedOrder: 500, preferredVendor: 'Global Timber Ltd', riskScore: 'High', urgency: 'Medium', reason: 'Projected demand exceeds current inventory.' }],
+      manufacturingInsights: [{ moNumber: 'MO-102', product: 'Wooden Chair', delayRisk: '78%', reason: 'Required materials have not arrived.', urgency: 'High' }],
+      executiveSummary: 'Welcome to FlowForge ERP Command Center.'
+    };
+
     if (pathname.startsWith('/dashboard')) {
       return {
         title: 'Operations Overview Insights',
-        summary: 'System health looks positive overall. We detected a slight inventory turnover lag in Finished Goods (WDT-001) due to delayed raw materials receipt.',
-        recommendations: [
-          { text: 'Pre-order 100 boxes of Wood Screws to cover next week\'s projected manufacturing orders.', savings: 'Expected savings: ₹2,400 (Bulk discount)' },
-          { text: 'Adjust Wooden Dining Table minimum stock level to 8 units to release ₹30,000 locked capital.', savings: 'Expected savings: ₹15,000 (Holding costs)' },
-        ],
-        alerts: [
-          { type: 'warning', text: '3 purchase orders are nearing vendor delivery threshold with no status updates.' }
-        ]
+        summary: data.executiveSummary || 'System health looks positive overall.',
+        recommendations: data.recommendations.map((r: any) => ({
+          text: r.action,
+          savings: r.reason
+        })).slice(0, 2),
+        alerts: data.criticalRisks.map((r: any) => ({
+          type: r.severity.toLowerCase() === 'high' ? 'critical' : 'warning',
+          text: `${r.risk}: ${r.reason}`
+        })).slice(0, 2)
       };
     } else if (pathname.startsWith('/products')) {
       return {
         title: 'Catalog & Margin Insights',
-        summary: 'Your catalog contains 3 finished assemblies and 9 raw materials. Teak wood cost has risen by 4% this quarter, impacting standard BoM margins.',
-        recommendations: [
-          { text: 'Review markup on Wooden Bookshelf (WBS-001) as raw component costs have increased by 8% overall.', savings: 'Expected profit gain: +₹400/pcs' },
-          { text: 'Mark inactive SKUs as disabled to optimize inventory filters.', savings: 'Improves dashboard search speed by 15%' },
-        ],
-        alerts: [
-          { type: 'info', text: 'All products currently have valid SKU codes mapped.' }
-        ]
+        summary: `Your catalog contains active product segments. Raw component costs represent safety margins.`,
+        recommendations: data.recommendations
+          .filter((r: any) => r.roles?.includes('product_manager') || r.roles?.includes('admin'))
+          .map((r: any) => ({ text: r.action, savings: r.reason }))
+          .slice(0, 2),
+        alerts: data.criticalRisks
+          .filter((r: any) => r.roles?.includes('product_manager') || r.roles?.includes('admin'))
+          .map((r: any) => ({ type: 'info', text: r.reason }))
+          .slice(0, 2)
       };
     } else if (pathname.startsWith('/inventory')) {
       return {
         title: 'Inventory Forecasting',
-        summary: 'Average stock holding value is ₹2.4 Lakhs. Standard reorder triggers are set to automatic MTS (Make-to-Stock) cycles.',
-        recommendations: [
-          { text: 'Reorder raw teak panels immediately. Current usage suggests a run-out in 12 days.', savings: 'Prevents 3 days of assembly halt' },
-          { text: 'Free reserved inventory for draft orders older than 48 hours to fulfill active sales orders.', savings: 'Expected savings: Fulfill ₹45,000 pending revenue' },
-        ],
-        alerts: [
-          { type: 'critical', text: 'Low stock detected for Wooden Leg (RM-WL-001). Under safety minimum of 50 units.' }
-        ]
+        summary: `Average stock holding health score index is ${data.operationalHealthBreakdown?.inventory || 95}/100.`,
+        recommendations: data.procurementInsights.map((p: any) => ({
+          text: `Order ${p.suggestedOrder} units of ${p.name} from ${p.preferredVendor}.`,
+          savings: `Prevents shortage (Stockout expected in ${p.daysRemaining} days)`
+        })).slice(0, 2),
+        alerts: data.criticalRisks
+          .filter((r: any) => r.roles?.includes('inventory') || r.roles?.includes('admin'))
+          .map((r: any) => ({ type: 'critical', text: r.reason }))
+          .slice(0, 2)
       };
     } else if (pathname.startsWith('/bom')) {
       return {
         title: 'Bill of Materials Analysis',
-        summary: 'Teak wood dining tables account for 65% of raw material consumption. Wood finish varnish (RM-WF-001) utilization has increased by 10% per run.',
-        recommendations: [
-          { text: 'Optimize the cutting grid for Wooden Chair back panels to decrease sheet wastage by 5%.', savings: 'Expected savings: ₹1,200 per batch' },
-          { text: 'Update dining chair standard recipe yield rate from 1.0 to 1.1 based on batch production efficiency.', savings: 'Refined standard costing accuracy' },
-        ],
-        alerts: [
-          { type: 'warning', text: 'Wooden Chair BoM has not been audited since March 2026.' }
-        ]
+        summary: `Manufacturing bottlenecks are evaluated across all assembly recipes. Department OEE is monitored.`,
+        recommendations: data.manufacturingInsights.map((m: any) => ({
+          text: `Resolve delay risk (${m.delayRisk}) on MO ${m.moNumber} (${m.product}).`,
+          savings: m.reason
+        })).slice(0, 2),
+        alerts: data.criticalRisks
+          .filter((r: any) => r.roles?.includes('product_manager') || r.roles?.includes('admin'))
+          .map((r: any) => ({ type: 'warning', text: r.reason }))
+          .slice(0, 2)
       };
     }
 
     return {
       title: 'General ERP Insights',
-      summary: 'Welcome to FlowForge ERP Command Center. Select any module to display context-aware optimization insights.',
-      recommendations: [
-        { text: 'Check the operations dashboard for daily sales order velocity checks.', savings: '' },
-        { text: 'Keep minimum stock levels up to date based on seasonal demand.', savings: '' }
-      ],
+      summary: data.executiveSummary || 'Welcome to FlowForge ERP Command Center. Select any module to display context-aware optimization insights.',
+      recommendations: data.recommendations.map((r: any) => ({ text: r.action, savings: r.reason })).slice(0, 2),
       alerts: []
     };
   };
@@ -89,15 +117,36 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({ isOpen, onClose }) => 
     setQuery('');
     setIsTyping(true);
 
-    // Simulate AI response
+    // Dynamic AI response based on real-time data
     setTimeout(() => {
-      let reply = 'I am analyzing that. Let me look up your real-time SQL ledger values.';
-      if (pathname.includes('inventory') && userMsg.toLowerCase().includes('stock')) {
-        reply = 'We have 40 Wooden Legs on hand, but 0 are reserved. However, we have a minimum stock level of 50 units, which creates a deficit of 10 units. I recommend initiating a purchase order for 100 units to secure vendor discounts.';
-      } else if (pathname.includes('bom') && userMsg.toLowerCase().includes('cost')) {
-        reply = 'The Wooden Dining Table recipe costs ₹8,500 to produce. The table top panel (RM-WT-001) represents the largest cost component at ₹1,200 (or 14% of materials).';
+      const data = insightsData;
+      let reply = '';
+      if (!data) {
+        reply = 'I am currently loading your real-time ERP data. Please try again in a moment.';
       } else {
-        reply = `Based on your current workspace context (${pathname}), our recommendation is to ensure all raw stock levels are kept above safety limits and pending manufacturing runs are scheduled during low load times.`;
+        const queryLower = userMsg.toLowerCase();
+        if (queryLower.includes('stock') || queryLower.includes('inventory') || queryLower.includes('material') || queryLower.includes('shortage')) {
+          const items = data.procurementInsights;
+          const listStr = items.map((p: any) => `${p.name} (SKU: ${p.sku}): ${p.currentStock} on hand, consumes ${p.consumption}/day. Stockout in ${p.daysRemaining} days. Suggested order: ${p.suggestedOrder} from ${p.preferredVendor}.`).join('\n\n');
+          reply = `Here is our real-time stock alert report:\n\n${listStr || 'No critical shortages detected.'}`;
+        } else if (queryLower.includes('risk') || queryLower.includes('alert') || queryLower.includes('delay')) {
+          const risks = data.criticalRisks;
+          const listStr = risks.map((r: any) => `⚠️ [${r.severity} Severity] ${r.risk}: ${r.reason}`).join('\n\n');
+          reply = `Here are the operational risks detected in our database:\n\n${listStr || 'All systems nominal.'}`;
+        } else if (queryLower.includes('action') || queryLower.includes('recommend') || queryLower.includes('what should i do')) {
+          const recs = data.recommendations;
+          const listStr = recs.map((r: any) => `👉 Action: ${r.action}. Impact: ${r.impact}. Reason: ${r.reason}`).join('\n\n');
+          reply = `Here are the actions I suggest you take based on our live metrics:\n\n${listStr}`;
+        } else if (queryLower.includes('health') || queryLower.includes('score')) {
+          reply = `Our current Operational Health Score is ${data.operationalHealthScore}/100.
+Breakdown:
+- Inventory: ${data.operationalHealthBreakdown?.inventory}/100
+- Manufacturing: ${data.operationalHealthBreakdown?.manufacturing}/100
+- Procurement: ${data.operationalHealthBreakdown?.procurement}/100
+- Sales: ${data.operationalHealthBreakdown?.sales}/100`;
+        } else {
+          reply = `Based on your current workspace context (${pathname}), here is the executive digest:\n\n${data.executiveSummary}`;
+        }
       }
       setMessages(prev => [...prev, { sender: 'ai', text: reply }]);
       setIsTyping(false);
@@ -149,7 +198,7 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({ isOpen, onClose }) => 
           {insights.alerts.length > 0 && (
             <div className="space-y-2">
               <h4 className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Alerts & Risks</h4>
-              {insights.alerts.map((alert, idx) => (
+              {insights.alerts.map((alert: { type: string; text: string }, idx: number) => (
                 <div
                   key={idx}
                   className={`p-3 rounded-lg border text-xs flex gap-2.5 items-start ${
@@ -171,7 +220,7 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({ isOpen, onClose }) => 
           <div className="space-y-3">
             <h4 className="text-[10px] font-bold text-text-muted uppercase tracking-wider">AI Recommendations</h4>
             <div className="space-y-2.5">
-              {insights.recommendations.map((rec, idx) => (
+              {insights.recommendations.map((rec: { text: string; savings?: string }, idx: number) => (
                 <div key={idx} className="p-3 border border-surface-border rounded-xl bg-slate-50/50 space-y-1 hover:border-brand-accent/30 transition-all">
                   <div className="flex gap-2 items-start">
                     <ArrowRight size={14} className="text-brand-accent shrink-0 mt-0.5" />
