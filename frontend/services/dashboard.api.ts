@@ -18,6 +18,13 @@ export interface DashboardStats {
     shortageOrders: number;
     lowStockCount: number;
     totalInventoryValue: number;
+    runningManufacturingRuns?: number;
+    pendingManufacturingApprovals?: number;
+    delayedManufacturingCount?: number;
+    procurementRiskScore?: string;
+    manufacturingEfficiency?: string;
+    employeeProductivity?: string;
+    demandForecast?: string;
   };
   inventoryHealth: {
     healthy: number;
@@ -44,6 +51,28 @@ export interface DashboardStats {
     status: string;
     totalAmount: number;
     createdAt: string;
+  }[];
+  smartProcurementRecommendations?: {
+    id: string;
+    name: string;
+    sku: string;
+    currentStock: number;
+    consumption: number;
+    daysRemaining: number;
+    suggestedOrder: number;
+    preferredVendor: string;
+    riskScore: string;
+  }[];
+  productionBottlenecks?: {
+    id: string;
+    name: string;
+    sku: string;
+    currentStock: number;
+    consumption: number;
+    daysRemaining: number;
+    suggestedOrder: number;
+    preferredVendor: string;
+    riskScore: string;
   }[];
 }
 

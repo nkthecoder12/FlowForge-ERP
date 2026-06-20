@@ -27,6 +27,18 @@ export class SalesService {
       include: {
         items: { include: { product: true } },
         creator: { select: { name: true } },
+        manufacturingOrders: {
+          include: {
+            product: true,
+            creator: { select: { name: true } },
+          },
+        },
+        purchaseOrders: {
+          include: {
+            items: { include: { product: true } },
+            creator: { select: { name: true } },
+          },
+        },
       },
     });
 

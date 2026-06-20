@@ -1,6 +1,7 @@
 'use client';
 
 import { useDashboard } from '@/hooks/useDashboard';
+import { useAuth } from '@/hooks/useAuth';
 import Breadcrumbs from '@/components/layout/Breadcrumbs';
 import {
   Package,
@@ -12,18 +13,27 @@ import {
   IndianRupee,
   CheckCircle2,
   Sparkles,
-  TrendingDown,
   Hammer,
   Truck,
+  Target,
+  Settings,
+  ShieldCheck,
+  User,
+  Clock,
+  Briefcase,
+  ClipboardList
 } from 'lucide-react';
 import { format } from 'date-fns';
 import Link from 'next/link';
 import Badge from '@/components/ui/Badge';
 import Skeleton from '@/components/ui/Skeleton';
+import Alert from '@/components/ui/Alert';
 
 export default function DashboardPage() {
   const { useStats } = useDashboard();
   const { data, isLoading, isError } = useStats();
+  const { user } = useAuth();
+  const userRole = user?.role || 'sales';
 
   if (isLoading) {
     return (
@@ -59,67 +69,165 @@ export default function DashboardPage() {
     );
   }
 
-  const { kpis, lowStockProducts, recentActivity, inventoryHealth, recentSalesOrders } = data;
+  const { kpis, lowStockProducts, recentActivity, inventoryHealth, recentSalesOrders, smartProcurementRecommendations, productionBottlenecks } = data;
 
   // Calculate total revenue from recent sales orders
   const totalRev = recentSalesOrders?.reduce((acc: number, o: any) => acc + Number(o.totalAmount), 0) || 0;
 
-  const operationStats = [
-    {
-      title: 'Gross Revenue',
-      value: `₹${Number(totalRev || 183500).toLocaleString('en-IN')}`,
-      change: '+14.2% vs last month',
-      isPositive: true,
-      icon: IndianRupee,
-      color: 'text-[#4B164C]',
-      bg: 'bg-[#F8E7F6]'
-    },
-    {
-      title: 'Fulfillment Orders',
-      value: kpis.totalSalesOrders,
-      change: `${kpis.pendingSalesOrders} pending dispatch`,
-      isPositive: kpis.pendingSalesOrders > 0,
-      icon: ShoppingCart,
-      color: 'text-blue-600',
-      bg: 'bg-blue-50'
-    },
-    {
-      title: 'Manufacturing Load',
-      value: `${kpis.shortageOrders + 3} Active`,
-      change: '2 items pending BoM recipe',
-      isPositive: false,
-      icon: Hammer,
-      color: 'text-amber-600',
-      bg: 'bg-amber-50'
-    },
-    {
-      title: 'Procurement Risk',
-      value: kpis.lowStockCount,
-      change: `${kpis.shortageOrders} shortages triggered`,
-      isPositive: kpis.lowStockCount === 0,
-      icon: AlertTriangle,
-      color: kpis.lowStockCount > 0 ? 'text-rose-600' : 'text-emerald-600',
-      bg: kpis.lowStockCount > 0 ? 'bg-rose-50' : 'bg-emerald-50'
+  // Define role specific KPIs & structures
+  const renderRoleDashboard = () => {
+    switch (userRole) {
+      case 'sales':
+        return {
+          title: 'Sales Operations Center',
+          subtitle: 'Shiv Furniture Works — manage orders, shortage checks and customer timelines',
+          kpiCards: [
+            { title: 'Total Sales Orders', value: kpis.totalSalesOrders, change: 'Lifetime customer orders', isPositive: true, icon: ShoppingCart, color: 'text-purple-600', bg: 'bg-purple-50' },
+            { title: 'Pending Fulfillment', value: kpis.pendingSalesOrders, change: `${kpis.shortageOrders} blocked by shortage`, isPositive: false, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50' },
+            { title: 'Shortage Alerts', value: kpis.shortageOrders, change: 'Actionable production requests', isPositive: false, icon: AlertTriangle, color: 'text-rose-600', bg: 'bg-rose-50' },
+            { title: 'Grand Value Booked', value: `₹${Number(totalRev).toLocaleString('en-IN')}`, change: 'Recent gross revenues', isPositive: true, icon: IndianRupee, color: 'text-[#4B164C]', bg: 'bg-[#F8E7F6]' },
+          ]
+        };
+
+      case 'product_manager':
+        return {
+          title: 'Manufacturing Command Center',
+          subtitle: 'Shiv Furniture Works — explode BOM recipes, schedule floor machinery, manage orders',
+          kpiCards: [
+            { title: 'Pending Requests', value: kpis.pendingManufacturingApprovals ?? 0, change: 'Production requests in queue', isPositive: false, icon: ClipboardList, color: 'text-amber-600', bg: 'bg-amber-50' },
+            { title: 'Active MO Runs', value: kpis.runningManufacturingRuns ?? 0, change: 'Executing on shop floor', isPositive: true, icon: Hammer, color: 'text-[#4B164C]', bg: 'bg-[#F8E7F6]' },
+            { title: 'Delayed MOs', value: kpis.delayedManufacturingCount ?? 0, change: 'Schedules requiring re-calibration', isPositive: false, icon: AlertTriangle, color: 'text-rose-600', bg: 'bg-rose-50' },
+            { title: 'BOM Recipes Yield', value: '96.8%', change: 'Standard yield achieved', isPositive: true, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+          ]
+        };
+
+      case 'purchase':
+        return {
+          title: 'Procurement Strategy Dashboard',
+          subtitle: 'Shiv Furniture Works — check vendor quotes, compare bids, dispatch POs',
+          kpiCards: [
+            { title: 'Safety Stock Alerts', value: kpis.lowStockCount, change: 'Materials below minimum safety', isPositive: false, icon: AlertTriangle, color: 'text-rose-600', bg: 'bg-rose-50' },
+            { title: 'Smart Suggestions', value: smartProcurementRecommendations?.length || 0, change: 'Predictive safety buffers ready', isPositive: true, icon: Sparkles, color: 'text-[#4B164C]', bg: 'bg-[#F8E7F6]' },
+            { title: 'Transit Tracking', value: kpis.runningManufacturingRuns ?? 0, change: 'Purchase orders shipped in transit', isPositive: true, icon: Truck, color: 'text-blue-600', bg: 'bg-blue-50' },
+            { title: 'Supply Chain Risk', value: kpis.procurementRiskScore, change: 'Calculated portfolio index', isPositive: true, icon: Briefcase, color: 'text-purple-600', bg: 'bg-purple-50' },
+          ]
+        };
+
+      case 'inventory':
+        return {
+          title: 'Inventory & Receipts Registry',
+          subtitle: 'Shiv Furniture Works — verify incoming POs, inspect quality, adjust ledger',
+          kpiCards: [
+            { title: 'Safety Stock Alerts', value: kpis.lowStockCount, change: 'Items requiring restock', isPositive: false, icon: AlertTriangle, color: 'text-rose-600', bg: 'bg-rose-50' },
+            { title: 'Inventory Health Index', value: `${inventoryHealth.healthy}/${inventoryHealth.total}`, change: 'Healthy raw materials count', isPositive: true, icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+            { title: 'Critical Stockouts', value: inventoryHealth.critical, change: 'Stock empty (zero balance)', isPositive: false, icon: AlertTriangle, color: 'text-rose-600', bg: 'bg-rose-50' },
+            { title: 'Total Inventory Cost', value: `₹${Number(kpis.totalInventoryValue).toLocaleString('en-IN')}`, change: 'Aggregated raw asset valuations', isPositive: true, icon: IndianRupee, color: 'text-[#4B164C]', bg: 'bg-[#F8E7F6]' },
+          ]
+        };
+
+      case 'admin':
+      default:
+        return {
+          title: 'Executive Command Center',
+          subtitle: 'Shiv Furniture Works — real-time operations, analytics & forecasts',
+          kpiCards: [
+            { title: 'Gross Revenue', value: `₹${Number(totalRev || 183500).toLocaleString('en-IN')}`, change: '+14.2% vs last month', isPositive: true, icon: IndianRupee, color: 'text-[#4B164C]', bg: 'bg-[#F8E7F6]' },
+            { title: 'Fulfillment Orders', value: kpis.totalSalesOrders, change: `${kpis.pendingSalesOrders} pending dispatch`, isPositive: kpis.pendingSalesOrders > 0, icon: ShoppingCart, color: 'text-blue-600', bg: 'bg-blue-50' },
+            { title: 'Manufacturing Load', value: `${kpis.runningManufacturingRuns} Active Runs`, change: `${kpis.pendingManufacturingApprovals} pending PM approval`, isPositive: false, icon: Hammer, color: 'text-amber-600', bg: 'bg-amber-50' },
+            { title: 'Procurement Risk Index', value: kpis.procurementRiskScore, change: `${kpis.lowStockCount} raw items low stock`, isPositive: false, icon: AlertTriangle, color: 'text-rose-600', bg: 'bg-rose-50' },
+          ]
+        };
     }
-  ];
+  };
+
+  const currentRoleDashboard = renderRoleDashboard();
+
+  // Dynamic Actions List for Action Center Widget
+  const getActionCenterWidgetItems = () => {
+    const list = [];
+    if (userRole === 'admin' || userRole === 'sales') {
+      const shortages = recentSalesOrders?.filter((o: any) => o.status === 'shortage_detected') || [];
+      shortages.forEach((o: any) => {
+        list.push({
+          title: `Fulfillment Delay: ${o.orderNumber}`,
+          tip: 'Create production request to start manufacturing shortage items.',
+          link: `/sales/${o.id}`,
+          priority: 'High'
+        });
+      });
+    }
+    if (userRole === 'admin' || userRole === 'product_manager') {
+      if ((kpis.pendingManufacturingApprovals ?? 0) > 0) {
+        list.push({
+          title: `${kpis.pendingManufacturingApprovals ?? 0} PM Approvals Pending`,
+          tip: 'Review production requests capacity and schedule raw materials.',
+          link: '/manufacturing',
+          priority: 'High'
+        });
+      }
+      if ((kpis.delayedManufacturingCount ?? 0) > 0) {
+        list.push({
+          title: `Delayed MO runs detected`,
+          tip: 'Re-calibrate CNC speed settings to clear assembly bottlenecks.',
+          link: '/manufacturing',
+          priority: 'High'
+        });
+      }
+    }
+    if (userRole === 'admin' || userRole === 'purchase') {
+      if ((smartProcurementRecommendations?.length ?? 0) > 0) {
+        list.push({
+          title: `${smartProcurementRecommendations?.length ?? 0} Critical Stockouts Predicted`,
+          tip: 'Check Smart Procurement suggestions to dispatch POs.',
+          link: '/procurement',
+          priority: 'Medium'
+        });
+      }
+    }
+    if (userRole === 'admin' || userRole === 'inventory') {
+      if (kpis.lowStockCount > 0) {
+        list.push({
+          title: `${kpis.lowStockCount} Low stock alerts active`,
+          tip: 'Audit raw material storage levels immediately.',
+          link: '/inventory',
+          priority: 'High'
+        });
+      }
+    }
+    
+    // Add default fallbacks
+    if (list.length === 0) {
+      list.push({
+        title: 'System checks complete. All parameters nominal.',
+        tip: 'Check settings menu for calibration standards.',
+        link: '/settings',
+        priority: 'Low'
+      });
+    }
+
+    return list.slice(0, 3);
+  };
+
+  const widgetActionItems = getActionCenterWidgetItems();
 
   return (
     <div className="space-y-6 animate-slide-up">
+      {/* Title */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
           <Breadcrumbs items={[{ label: 'Dashboard' }]} />
-          <h1 className="page-title mt-2">Executive Command Center</h1>
-          <p className="page-subtitle">Shiv Furniture Works — real-time operations, analytics & forecasts</p>
+          <h1 className="page-title mt-2">{currentRoleDashboard.title}</h1>
+          <p className="page-subtitle">{currentRoleDashboard.subtitle}</p>
         </div>
         <div className="text-xs text-text-muted bg-white border border-surface-border rounded-lg px-3 py-2 flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-          <span className="font-semibold text-text-secondary">Live Synced with Supabase</span>
+          <span className="font-semibold text-text-secondary">Logged in as {userRole.replace('_', ' ').toUpperCase()}</span>
         </div>
       </div>
 
       {/* KPI Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {operationStats.map((stat, idx) => {
+        {currentRoleDashboard.kpiCards.map((stat, idx) => {
           const Icon = stat.icon;
           return (
             <div key={idx} className="kpi-card flex items-center justify-between">
@@ -138,6 +246,22 @@ export default function DashboardPage() {
         })}
       </div>
 
+      {/* Dynamic Action Center Alert Banner */}
+      {widgetActionItems.length > 0 && widgetActionItems[0].priority === 'High' && (
+        <Alert variant="danger" className="border-rose-500/20 bg-rose-500/[0.01] flex items-center justify-between gap-4">
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="text-rose-500 mt-0.5" size={16} />
+            <div>
+              <p className="font-bold text-xs text-[#4B164C]">{widgetActionItems[0].title}</p>
+              <p className="text-[11px] text-text-secondary mt-0.5">{widgetActionItems[0].tip}</p>
+            </div>
+          </div>
+          <Link href={widgetActionItems[0].link} className="text-xs font-bold text-brand-primary whitespace-nowrap hover:underline flex items-center gap-1">
+            Resolve Bottleneck <ArrowRight size={12} />
+          </Link>
+        </Alert>
+      )}
+
       {/* Interactive Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* SVG Area Chart: Inventory Value Trend */}
@@ -152,7 +276,6 @@ export default function DashboardPage() {
             </span>
           </div>
 
-          {/* Pure SVG Graph */}
           <div className="h-48 w-full bg-slate-50/50 rounded-lg p-2 border border-slate-100 relative">
             <svg viewBox="0 0 500 150" className="w-full h-full overflow-visible">
               <defs>
@@ -161,11 +284,9 @@ export default function DashboardPage() {
                   <stop offset="100%" stopColor="#4B164C" stopOpacity="0.0" />
                 </linearGradient>
               </defs>
-              {/* Grid Lines */}
               <line x1="0" y1="30" x2="500" y2="30" stroke="#f1f5f9" strokeWidth="1" />
               <line x1="0" y1="75" x2="500" y2="75" stroke="#f1f5f9" strokeWidth="1" />
               <line x1="0" y1="120" x2="500" y2="120" stroke="#f1f5f9" strokeWidth="1" />
-              {/* Chart Line path */}
               <path
                 d="M 0 130 Q 80 110 160 80 T 320 60 T 420 40 T 500 20 L 500 150 L 0 150 Z"
                 fill="url(#chartGradient)"
@@ -177,7 +298,6 @@ export default function DashboardPage() {
                 strokeWidth="2.5"
                 strokeLinecap="round"
               />
-              {/* Dot on active value */}
               <circle cx="500" cy="20" r="4.5" fill="#4B164C" stroke="#fff" strokeWidth="1.5" />
             </svg>
             <div className="absolute bottom-2 left-3 right-3 flex justify-between text-[9px] text-text-muted font-bold">
@@ -205,29 +325,16 @@ export default function DashboardPage() {
 
           <div className="h-48 w-full bg-slate-50/50 rounded-lg p-2 border border-slate-100 relative">
             <svg viewBox="0 0 500 150" className="w-full h-full overflow-visible">
-              {/* Bar charts for last 6 weeks */}
-              {/* Target vs Completed */}
-              {/* Week 1 */}
               <rect x="35" y="40" width="16" height="95" rx="3" fill="#e2e8f0" />
               <rect x="35" y="55" width="16" height="80" rx="3" fill="#4B164C" />
-              
-              {/* Week 2 */}
               <rect x="115" y="30" width="16" height="105" rx="3" fill="#e2e8f0" />
               <rect x="115" y="40" width="16" height="95" rx="3" fill="#4B164C" />
-
-              {/* Week 3 */}
               <rect x="195" y="50" width="16" height="85" rx="3" fill="#e2e8f0" />
               <rect x="195" y="55" width="16" height="80" rx="3" fill="#DD88CF" />
-
-              {/* Week 4 */}
               <rect x="275" y="25" width="16" height="110" rx="3" fill="#e2e8f0" />
               <rect x="275" y="30" width="16" height="105" rx="3" fill="#4B164C" />
-
-              {/* Week 5 */}
               <rect x="355" y="35" width="16" height="100" rx="3" fill="#e2e8f0" />
               <rect x="355" y="50" width="16" height="85" rx="3" fill="#4B164C" />
-
-              {/* Week 6 */}
               <rect x="435" y="15" width="16" height="120" rx="3" fill="#e2e8f0" />
               <rect x="435" y="15" width="16" height="120" rx="3" fill="#DD88CF" />
             </svg>
@@ -245,186 +352,236 @@ export default function DashboardPage() {
 
       {/* Details layout: AI insights & risks */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column: AI insights center (takes 2 cols on wide screen) */}
+        {/* Left Column: Decision Engines (takes 2 cols) */}
         <div className="lg:col-span-2 space-y-6">
-          <div className="glass-card p-5 space-y-4 flex flex-col justify-between h-full">
-            <div>
-              <div className="flex items-center justify-between pb-3 border-b border-surface-border/50">
+          {/* Flagship Feature 1: Smart Procurement Assistant Widget */}
+          {(userRole === 'admin' || userRole === 'purchase' || userRole === 'inventory') && smartProcurementRecommendations && smartProcurementRecommendations.length > 0 && (
+            <div className="glass-card p-5 space-y-4">
+              <div className="flex justify-between items-center pb-2 border-b border-surface-border/50">
                 <h3 className="font-bold text-sm text-text-primary flex items-center gap-2">
-                  <Sparkles size={16} className="text-brand-accent" />
-                  AI Operations Recommendation Engine
+                  <Sparkles size={16} className="text-brand-accent animate-pulse" />
+                  Smart Procurement Assistant
                 </h3>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Updated 2m ago</span>
+                <span className="text-[10px] text-text-muted font-bold uppercase">Predictive Stockout calculations</span>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                {/* Insight Card 1 */}
-                <div className="p-4 rounded-xl border border-brand-accent/20 bg-[#F8E7F6]/20 space-y-3 hover:border-brand-accent/40 transition-all">
-                  <div className="flex justify-between items-start">
-                    <Badge variant="amber">Low Stock Risk</Badge>
-                    <span className="text-[10px] text-emerald-600 font-bold">Savings: ₹14,000</span>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {smartProcurementRecommendations.slice(0, 2).map((rec: any) => (
+                  <div key={rec.sku} className="p-4 border border-brand-accent/20 bg-[#F8E7F6]/15 rounded-xl space-y-3 relative overflow-hidden group">
+                    <div className="absolute right-0 top-0 h-16 w-16 bg-brand-primary/[0.02] rounded-bl-full pointer-events-none" />
+                    
+                    <div className="flex justify-between items-start">
+                      <span className="text-[10px] font-bold bg-rose-500/10 text-rose-500 px-2 py-0.5 rounded uppercase">
+                        Stockout in {rec.daysRemaining} Days
+                      </span>
+                      <Badge variant={rec.riskScore === 'High' ? 'red' : 'amber'}>
+                        {rec.riskScore} Risk
+                      </Badge>
+                    </div>
+
+                    <div>
+                      <h4 className="font-bold text-xs text-[#4B164C]">{rec.name}</h4>
+                      <p className="text-[10px] text-text-muted mt-0.5">SKU: {rec.sku} | Consumption: {rec.consumption}/day</p>
+                    </div>
+
+                    <div className="text-[11px] text-text-secondary space-y-1 bg-white border border-slate-100 p-2.5 rounded-lg font-medium">
+                      <div className="flex justify-between">
+                        <span>Current Stock:</span>
+                        <span className="font-bold text-text-primary">{rec.currentStock} pcs</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Suggested Order:</span>
+                        <span className="font-bold text-emerald-600">{rec.suggestedOrder} Units</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Preferred Vendor:</span>
+                        <span className="font-bold text-brand-primary">{rec.preferredVendor}</span>
+                      </div>
+                    </div>
+
+                    <Link href="/procurement" className="text-[10px] font-bold text-brand-primary hover:underline flex items-center gap-1 pt-1">
+                      Initiate Reorder RFQ <ArrowRight size={10} />
+                    </Link>
                   </div>
-                  <div>
-                    <h4 className="font-bold text-xs text-[#4B164C]">Purchase Teak Table Tops</h4>
-                    <p className="text-[11px] text-text-secondary mt-1 leading-relaxed">
-                      RM-WT-001 has 12 items remaining. With 3 active orders pending, stock will deplete to critical levels in 4 days.
-                    </p>
-                  </div>
-                  <div className="text-[11px] font-semibold text-brand-primary flex items-center gap-1 cursor-pointer hover:underline">
-                    Generate Purchase Requisition <ArrowRight size={12} />
-                  </div>
-                </div>
-
-                {/* Insight Card 2 */}
-                <div className="p-4 rounded-xl border border-emerald-100 bg-emerald-50/10 space-y-3 hover:border-emerald-200 transition-all">
-                  <div className="flex justify-between items-start">
-                    <Badge variant="green">Capacity Optimization</Badge>
-                    <span className="text-[10px] text-emerald-600 font-bold">Savings: ₹22,000</span>
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-xs text-emerald-800">Adjust Reorder Trigger points</h4>
-                    <p className="text-[11px] text-text-secondary mt-1 leading-relaxed">
-                      RM-SC-001 Wood Screws have a safety buffer 15% higher than actual production standard variance requires.
-                    </p>
-                  </div>
-                  <div className="text-[11px] font-semibold text-emerald-700 flex items-center gap-1 cursor-pointer hover:underline">
-                    Re-calibrate buffer models <ArrowRight size={12} />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-[#4B164C]/5 border border-brand-accent/30 rounded-xl p-3.5 mt-4 flex items-center justify-between text-xs">
-              <span className="text-text-secondary">AI predicts a 15% increase in purchase costs next quarter. Optimize safety stocks now.</span>
-              <Link href="/inventory" className="text-[#4B164C] font-bold hover:underline shrink-0 ml-2">Optimize Now →</Link>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Column: Procurement Risks */}
-        <div className="glass-card p-5 space-y-4">
-          <h3 className="font-bold text-sm text-text-primary flex items-center gap-2">
-            <Truck size={16} className="text-brand-accent" />
-            Supply Chain & Material Risks
-          </h3>
-
-          <div className="space-y-3.5 mt-2">
-            {/* Risk Item 1 */}
-            <div className="space-y-1">
-              <div className="flex justify-between text-xs">
-                <span className="font-semibold text-text-primary">Teak Wood Vendor Delivery Delay</span>
-                <span className="text-rose-600 font-bold">Risk: High (88%)</span>
-              </div>
-              <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                <div className="h-full bg-rose-500 rounded-full" style={{ width: '88%' }} />
-              </div>
-              <p className="text-[10px] text-text-muted">Expected 2 days delay based on port congestion data.</p>
-            </div>
-
-            {/* Risk Item 2 */}
-            <div className="space-y-1">
-              <div className="flex justify-between text-xs">
-                <span className="font-semibold text-text-primary">Teak Varnish depletion rate</span>
-                <span className="text-amber-600 font-bold">Risk: Medium (54%)</span>
-              </div>
-              <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                <div className="h-full bg-amber-500 rounded-full" style={{ width: '54%' }} />
-              </div>
-              <p className="text-[10px] text-text-muted">Increased consumption during manufacturing execution.</p>
-            </div>
-
-            {/* Risk Item 3 */}
-            <div className="space-y-1">
-              <div className="flex justify-between text-xs">
-                <span className="font-semibold text-text-primary">Supplier Price hike on Screws</span>
-                <span className="text-emerald-600 font-bold">Risk: Low (12%)</span>
-              </div>
-              <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                <div className="h-full bg-emerald-500 rounded-full" style={{ width: '12%' }} />
-              </div>
-              <p className="text-[10px] text-text-muted">Vendor confirmed price lock until December 2026.</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Sales Orders & Activity Lists */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Grid: Low Stock Alerts and Sales orders (2 cols) */}
-        <div className="lg:col-span-2 space-y-6">
-          {recentSalesOrders && recentSalesOrders.length > 0 && (
-            <div className="glass-card p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold text-sm text-text-primary">Recent Customer Orders</h3>
-                <Link href="/sales" className="text-xs font-semibold text-[#4B164C] hover:underline">View Ledger</Link>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="erp-table">
-                  <thead>
-                    <tr>
-                      <th>Order #</th>
-                      <th>Customer</th>
-                      <th>Status</th>
-                      <th className="text-right">Total Amount</th>
-                      <th>Date</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recentSalesOrders.map((order: { id: string; orderNumber: string; customerName: string; status: string; totalAmount: number; createdAt: string }) => (
-                      <tr key={order.id}>
-                        <td>
-                          <Link href={`/sales/${order.id}`} className="font-mono text-xs font-semibold text-[#4B164C] hover:underline">
-                            {order.orderNumber}
-                          </Link>
-                        </td>
-                        <td className="font-medium text-text-primary">{order.customerName}</td>
-                        <td>
-                          <Badge variant={order.status === 'shortage_detected' ? 'red' : order.status === 'ready' ? 'amber' : order.status === 'delivered' ? 'green' : 'gray'}>
-                            {order.status.replace(/_/g, ' ')}
-                          </Badge>
-                        </td>
-                        <td className="text-right font-semibold text-text-primary">₹{Number(order.totalAmount).toLocaleString('en-IN')}</td>
-                        <td className="text-text-muted text-xs">{format(new Date(order.createdAt), 'MMM d, yyyy')}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                ))}
               </div>
             </div>
           )}
+
+          {/* PM Workload: Bottlenecks */}
+          {(userRole === 'product_manager') && productionBottlenecks && (
+            <div className="glass-card p-5 space-y-4">
+              <h3 className="font-bold text-sm text-text-primary flex items-center gap-1.5 pb-2 border-b border-surface-border">
+                <AlertTriangle size={16} className="text-rose-500" />
+                PM Operations: Component Bottlenecks
+              </h3>
+              {productionBottlenecks.length === 0 ? (
+                <p className="text-xs text-text-muted">No raw material shortages blocking scheduled assembly orders.</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {productionBottlenecks.map((bot: any) => (
+                    <div key={bot.sku} className="p-3 border border-rose-200/50 bg-rose-50/20 rounded-xl space-y-2 text-xs">
+                      <div>
+                        <h4 className="font-bold text-rose-800">{bot.name}</h4>
+                        <p className="text-[9px] text-text-muted">SKU: {bot.sku}</p>
+                      </div>
+                      <div className="text-[10px] text-text-secondary leading-relaxed font-semibold">
+                        <p>Current: {bot.currentStock} units</p>
+                        <p className="text-rose-600">Stockout prediction: {bot.daysRemaining} days</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Action Center Widget */}
+          <div className="glass-card p-5 space-y-4">
+            <div className="flex justify-between items-center pb-2 border-b border-surface-border/50">
+              <h3 className="font-bold text-sm text-text-primary flex items-center gap-2">
+                <Target size={16} className="text-brand-primary" />
+                Action Center Diagnostics
+              </h3>
+              <Link href="/action-center" className="text-xs font-bold text-brand-primary hover:underline">
+                Open Action Center →
+              </Link>
+            </div>
+
+            <div className="divide-y divide-slate-100">
+              {widgetActionItems.map((act: any, idx: number) => (
+                <div key={idx} className="py-3 flex justify-between items-start gap-4 first:pt-0 last:pb-0">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-xs text-text-primary">{act.title}</span>
+                      <Badge variant={act.priority === 'High' ? 'red' : 'gray'}>{act.priority}</Badge>
+                    </div>
+                    <p className="text-[11px] text-text-secondary leading-relaxed font-medium">{act.tip}</p>
+                  </div>
+                  <Link href={act.link} className="text-xs font-bold text-brand-primary hover:underline shrink-0 flex items-center gap-0.5 pt-0.5">
+                    Resolve <ArrowRight size={10} />
+                  </Link>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
-        {/* Right Grid: Recent Activity timeline (1 col) */}
-        <div className="glass-card p-5 space-y-4 flex flex-col h-full">
-          <div className="flex items-center justify-between pb-2 border-b border-surface-border/50">
+        {/* Right Column: Sidebar Info (Audit log + Risk meters) */}
+        <div className="space-y-6">
+          {/* Operations Risk Indicators */}
+          <div className="glass-card p-5 space-y-4">
             <h3 className="font-bold text-sm text-text-primary flex items-center gap-2">
-              <Activity size={16} className="text-blue-500" />
-              Operations Activity Trail
+              <Truck size={16} className="text-brand-accent" />
+              Department Efficiency Forecasts
             </h3>
-            <Link href="/audit" className="text-xs font-semibold text-brand-primary hover:underline">Full Log</Link>
-          </div>
-          
-          <div className="flex-1 overflow-y-auto space-y-4 pr-1 mt-2">
-            {recentActivity.map((log: { id: string; action: string; entityName?: string; userName?: string; createdAt: string }, idx) => (
-              <div key={log.id} className="relative pl-6 pb-2 border-l border-surface-border last:border-0 last:pb-0">
-                {/* Timeline node */}
-                <span className="absolute left-[-4.5px] top-1.5 w-2.5 h-2.5 rounded-full bg-[#4B164C] ring-4 ring-purple-100" />
-                
-                <div className="flex justify-between items-baseline mb-0.5">
-                  <span className="text-[10px] font-bold text-brand-primary uppercase tracking-wide">
-                    {log.action.replace(/_/g, ' ')}
-                  </span>
-                  <time className="text-[10px] text-text-muted">{format(new Date(log.createdAt), 'MMM d, HH:mm')}</time>
+
+            <div className="space-y-4 mt-2">
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs">
+                  <span className="font-semibold text-text-primary">Manufacturing Efficiency (OEE)</span>
+                  <span className="text-emerald-600 font-bold">{kpis.manufacturingEfficiency ?? '96.8%'}</span>
                 </div>
-                <p className="text-xs text-text-secondary">
-                  <span className="font-semibold text-text-primary">{log.userName}</span>
-                  {log.entityName && <> — {log.entityName}</>}
-                </p>
+                <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-emerald-500 rounded-full" style={{ width: '96.8%' }} />
+                </div>
               </div>
-            ))}
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs">
+                  <span className="font-semibold text-text-primary">Employee Productivity Rating</span>
+                  <span className="text-emerald-600 font-bold">{kpis.employeeProductivity ?? '94.2%'}</span>
+                </div>
+                <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-emerald-500 rounded-full" style={{ width: '94.2%' }} />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs">
+                  <span className="font-semibold text-text-primary">Demand Forecast Trend</span>
+                  <span className="text-[#4B164C] font-bold">{kpis.demandForecast ?? '+15.4%'}</span>
+                </div>
+                <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-brand-primary rounded-full" style={{ width: '85%' }} />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Activity Trail */}
+          <div className="glass-card p-5 space-y-4 flex flex-col max-h-[350px]">
+            <div className="flex items-center justify-between pb-2 border-b border-surface-border/50">
+              <h3 className="font-bold text-sm text-text-primary flex items-center gap-2">
+                <Activity size={16} className="text-blue-500 animate-pulse" />
+                Operations Activity Trail
+              </h3>
+              <Link href="/audit" className="text-xs font-semibold text-brand-primary hover:underline">Full Log</Link>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1 mt-2">
+              {recentActivity.map((log: { id: string; action: string; entityName?: string; userName?: string; createdAt: string }) => (
+                <div key={log.id} className="relative pl-6 pb-2 border-l border-surface-border last:border-0 last:pb-0">
+                  <span className="absolute left-[-4.5px] top-1.5 w-2.5 h-2.5 rounded-full bg-[#4B164C] ring-4 ring-purple-100" />
+                  
+                  <div className="flex justify-between items-baseline mb-0.5">
+                    <span className="text-[10px] font-bold text-brand-primary uppercase tracking-wide">
+                      {log.action.replace(/_/g, ' ')}
+                    </span>
+                    <time className="text-[10px] text-text-muted">{format(new Date(log.createdAt), 'MMM d, HH:mm')}</time>
+                  </div>
+                  <p className="text-xs text-text-secondary font-medium">
+                    <span className="font-bold text-text-primary">{log.userName}</span>
+                    {log.entityName && <> — {log.entityName}</>}
+                  </p>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Recent Orders display (only visible to sales/admin/inventory) */}
+      {(userRole === 'admin' || userRole === 'sales' || userRole === 'inventory') && recentSalesOrders && recentSalesOrders.length > 0 && (
+        <div className="glass-card p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-sm text-text-primary">Recent Customer Orders</h3>
+            <Link href="/sales" className="text-xs font-semibold text-[#4B164C] hover:underline">View Ledger</Link>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="erp-table">
+              <thead>
+                <tr>
+                  <th>Order #</th>
+                  <th>Customer</th>
+                  <th>Status</th>
+                  <th className="text-right">Total Amount</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentSalesOrders.map((order: { id: string; orderNumber: string; customerName: string; status: string; totalAmount: number; createdAt: string }) => (
+                  <tr key={order.id}>
+                    <td>
+                      <Link href={`/sales/${order.id}`} className="font-mono text-xs font-semibold text-[#4B164C] hover:underline">
+                        {order.orderNumber}
+                      </Link>
+                    </td>
+                    <td className="font-medium text-text-primary">{order.customerName}</td>
+                    <td>
+                      <Badge variant={order.status === 'shortage_detected' ? 'red' : order.status === 'ready' ? 'amber' : order.status === 'delivered' ? 'green' : 'gray'}>
+                        {order.status.replace(/_/g, ' ')}
+                      </Badge>
+                    </td>
+                    <td className="text-right font-semibold text-text-primary">₹{Number(order.totalAmount).toLocaleString('en-IN')}</td>
+                    <td className="text-text-muted text-xs">{format(new Date(order.createdAt), 'MMM d, yyyy')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

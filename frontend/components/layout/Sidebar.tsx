@@ -14,30 +14,50 @@ import {
   Warehouse,
   ShoppingCart,
   BookOpen,
+  Hammer,
+  Truck,
+  Clock,
+  Target,
+  Settings,
 } from 'lucide-react';
 
 const SECTIONS = [
   {
-    title: 'Core Operations',
+    title: 'Overview',
     items: [
-      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'product_manager', 'sales', 'inventory'] },
-      { name: 'Products', path: '/products', icon: Package, roles: ['admin', 'product_manager', 'sales', 'inventory'] },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'product_manager', 'sales', 'purchase', 'inventory'] },
+    ]
+  },
+  {
+    title: 'Customer & Catalog',
+    items: [
+      { name: 'Products', path: '/products', icon: Package, roles: ['admin', 'product_manager', 'sales', 'purchase', 'inventory'] },
+      { name: 'Bill of Materials', path: '/bom', icon: ClipboardList, roles: ['admin', 'product_manager'] },
       { name: 'Sales Orders', path: '/sales', icon: ShoppingCart, roles: ['admin', 'sales'] },
     ]
   },
   {
-    title: 'Supply Chain',
+    title: 'Supply Chain Operations',
     items: [
+      { name: 'Manufacturing', path: '/manufacturing', icon: Hammer, roles: ['admin', 'product_manager'] },
+      { name: 'Procurement', path: '/procurement', icon: Truck, roles: ['admin', 'purchase'] },
       { name: 'Inventory', path: '/inventory', icon: Warehouse, roles: ['admin', 'inventory'] },
       { name: 'Stock Ledger', path: '/inventory/ledger', icon: BookOpen, roles: ['admin', 'inventory'] },
-      { name: 'Bill of Materials', path: '/bom', icon: ClipboardList, roles: ['admin', 'product_manager'] },
     ]
   },
   {
-    title: 'System',
+    title: 'Decision Intelligence',
+    items: [
+      { name: 'Business Timeline', path: '/timeline', icon: Clock, roles: ['admin', 'sales', 'product_manager', 'purchase', 'inventory'] },
+      { name: 'Action Center', path: '/action-center', icon: Target, roles: ['admin', 'sales', 'product_manager', 'purchase', 'inventory'] },
+    ]
+  },
+  {
+    title: 'System & Security',
     items: [
       { name: 'Users', path: '/users', icon: Users, roles: ['admin'] },
       { name: 'Audit Logs', path: '/audit', icon: ShieldAlert, roles: ['admin'] },
+      { name: 'Settings', path: '/settings', icon: Settings, roles: ['admin', 'sales', 'product_manager', 'purchase', 'inventory'] },
     ]
   }
 ];

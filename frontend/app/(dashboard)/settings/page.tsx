@@ -1,128 +1,147 @@
 'use client';
 
-import { useForm } from 'react-hook-form';
-import { Save, Building2, Palette, Globe } from 'lucide-react';
-import toast from 'react-hot-toast';
+import React from 'react';
+import { useAuth } from '@/hooks/useAuth';
+import { 
+  Settings, User, Building2, Cpu, DollarSign, ShieldCheck, Database, Info 
+} from 'lucide-react';
+import { Button } from '@/components/ui/Button';
 
 export default function SettingsPage() {
-  const { register, handleSubmit } = useForm({
-    defaultValues: {
-      companyName: 'FlowForge Corp',
-      currency: 'USD',
-      timezone: 'UTC',
-      theme: 'dark',
-      notifications: true,
-    }
-  });
-
-  const onSubmit = (data: any) => {
-    // In a real app, this would hit a settings endpoint
-    toast.success('Settings saved successfully');
-    console.log('Saved settings:', data);
-  };
+  const { user } = useAuth();
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto pb-12">
+    <div className="space-y-6">
+      {/* Title */}
       <div>
         <h1 className="page-title">System Settings</h1>
-        <p className="page-subtitle">Manage global application preferences</p>
+        <p className="page-subtitle">Configure company details, currency formats, operational machinery, and review permissions</p>
       </div>
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-        {/* General Info */}
-        <div className="glass-card overflow-hidden">
-          <div className="p-4 border-b border-surface-border flex items-center gap-2 bg-surface-card/50">
-            <Building2 size={18} className="text-brand" />
-            <h2 className="font-semibold text-slate-100">Company Information</h2>
-          </div>
-          <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-slate-300">Company Name</label>
-              <input {...register('companyName')} className="input-field" />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* User profile details */}
+        <div className="glass-card p-6 space-y-4">
+          <h3 className="text-base font-bold text-brand-primary flex items-center gap-2 pb-2 border-b border-surface-border">
+            <User size={18} />
+            User Identity Profile
+          </h3>
+
+          <div className="space-y-4">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-[#DD88CF] to-[#4B164C] flex items-center justify-center text-white font-bold text-lg shadow-sm">
+                {user?.name?.charAt(0).toUpperCase() || 'U'}
+              </div>
+              <div>
+                <h4 className="font-bold text-text-primary text-sm">{user?.name}</h4>
+                <p className="text-xs text-text-muted capitalize">{user?.role?.replace('_', ' ')} Role</p>
+              </div>
             </div>
-            
-            <div className="space-y-1.5 md:row-span-2">
-              <label className="block text-sm font-medium text-slate-300">Company Logo</label>
-              <div className="border-2 border-dashed border-surface-border rounded-xl p-6 flex flex-col items-center justify-center text-center hover:border-brand-500/50 transition-colors h-32">
-                <div className="w-12 h-12 rounded bg-gradient-brand flex items-center justify-center mb-2">
-                  <span className="text-white font-bold tracking-tight">FF</span>
+
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between py-1.5 border-b border-slate-100">
+                <span className="text-text-secondary">Email Address</span>
+                <span className="font-semibold text-text-primary">{user?.email}</span>
+              </div>
+              <div className="flex justify-between py-1.5 border-b border-slate-100">
+                <span className="text-text-secondary">Status</span>
+                <span className="font-semibold text-emerald-600">Active Session</span>
+              </div>
+              <div className="flex justify-between py-1.5">
+                <span className="text-text-secondary">Connected Company</span>
+                <span className="font-semibold text-text-primary">Shiv Furniture Works</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Company Settings */}
+        <div className="glass-card p-6 space-y-4 lg:col-span-2">
+          <h3 className="text-base font-bold text-brand-primary flex items-center gap-2 pb-2 border-b border-surface-border">
+            <Building2 size={18} />
+            Company Operations Profile
+          </h3>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Company Name</label>
+                <input 
+                  type="text" 
+                  disabled 
+                  value="Shiv Furniture Works" 
+                  className="w-full text-xs p-3 rounded-xl border border-surface-border bg-slate-50 text-text-secondary font-medium"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Corporate Address</label>
+                <input 
+                  type="text" 
+                  disabled 
+                  value="Industrial Area, Sector 2, Kirti Nagar, New Delhi" 
+                  className="w-full text-xs p-3 rounded-xl border border-surface-border bg-slate-50 text-text-secondary font-medium"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Default ERP Currency</label>
+                <div className="flex items-center gap-2">
+                  <span className="p-2.5 bg-slate-100 rounded-lg text-xs font-bold">₹</span>
+                  <input 
+                    type="text" 
+                    disabled 
+                    value="INR (Indian Rupee)" 
+                    className="w-full text-xs p-3 rounded-xl border border-surface-border bg-slate-50 text-text-secondary font-medium"
+                  />
                 </div>
-                <p className="text-xs text-slate-500">Click to upload new logo</p>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Standard Tax Rate (GST)</label>
+                <input 
+                  type="text" 
+                  disabled 
+                  value="18% CGST + SGST" 
+                  className="w-full text-xs p-3 rounded-xl border border-surface-border bg-slate-50 text-text-secondary font-medium"
+                />
               </div>
             </div>
           </div>
         </div>
 
-        {/* Localization */}
-        <div className="glass-card overflow-hidden">
-          <div className="p-4 border-b border-surface-border flex items-center gap-2 bg-surface-card/50">
-            <Globe size={18} className="text-emerald-400" />
-            <h2 className="font-semibold text-slate-100">Localization</h2>
-          </div>
-          <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-slate-300">System Currency</label>
-              <select {...register('currency')} className="input-field appearance-none">
-                <option value="USD">USD ($)</option>
-                <option value="EUR">EUR (€)</option>
-                <option value="GBP">GBP (£)</option>
-                <option value="INR">INR (₹)</option>
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-slate-300">Default Timezone</label>
-              <select {...register('timezone')} className="input-field appearance-none">
-                <option value="UTC">UTC (Universal Time)</option>
-                <option value="EST">EST (Eastern Standard)</option>
-                <option value="PST">PST (Pacific Standard)</option>
-                <option value="IST">IST (Indian Standard)</option>
-              </select>
+        {/* Machinery configuration */}
+        <div className="glass-card p-6 space-y-4 lg:col-span-3">
+          <h3 className="text-base font-bold text-brand-primary flex items-center gap-2 pb-2 border-b border-surface-border">
+            <Cpu size={18} />
+            Shop Floor Machinery Configuration
+          </h3>
+
+          <div className="space-y-4">
+            <p className="text-xs text-text-secondary">Standard calibrated machinery lines registered for recipe execution: </p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {[
+                { name: 'Machine CNC-A', code: 'CNC-001', type: 'Computerized Router', cap: 'High Yield Production' },
+                { name: 'Machine L-1', code: 'VEN-002', type: 'Veneering Press', cap: 'Premium Finishing' },
+                { name: 'Assembly Line B-4', code: 'ASM-004', type: 'Manual Joinery bench', cap: 'Bespoke Crafting' },
+              ].map((mac) => (
+                <div key={mac.name} className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-2">
+                  <div className="flex justify-between items-start">
+                    <h4 className="font-bold text-xs text-brand-primary">{mac.name}</h4>
+                    <span className="font-mono text-[9px] font-bold bg-[#F8E7F6] text-[#4B164C] px-1.5 py-0.5 rounded">{mac.code}</span>
+                  </div>
+                  <div className="text-[11px] text-text-secondary space-y-0.5 font-medium">
+                    <p>Machine Type: {mac.type}</p>
+                    <p>Capability: {mac.cap}</p>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
-
-        {/* Appearance & Preferences */}
-        <div className="glass-card overflow-hidden">
-          <div className="p-4 border-b border-surface-border flex items-center gap-2 bg-surface-card/50">
-            <Palette size={18} className="text-purple-400" />
-            <h2 className="font-semibold text-slate-100">Appearance & Preferences</h2>
-          </div>
-          <div className="p-6 space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-medium text-slate-200">Default Theme</h3>
-                <p className="text-sm text-slate-500">Select the default interface theme</p>
-              </div>
-              <div className="flex items-center gap-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="radio" {...register('theme')} value="dark" className="text-brand focus:ring-brand" />
-                  <span className="text-sm text-slate-300">Dark</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer opacity-50" title="Coming soon">
-                  <input type="radio" {...register('theme')} value="light" disabled className="text-brand focus:ring-brand" />
-                  <span className="text-sm text-slate-500">Light</span>
-                </label>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between pt-4 border-t border-surface-border">
-              <div>
-                <h3 className="font-medium text-slate-200">System Notifications</h3>
-                <p className="text-sm text-slate-500">Enable in-app notifications for alerts</p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" {...register('notifications')} className="sr-only peer" />
-                <div className="w-11 h-6 bg-surface-input peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-brand/50 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand"></div>
-              </label>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex justify-end gap-4">
-          <button type="button" className="btn-ghost">Reset Defaults</button>
-          <button type="submit" className="btn-primary"><Save size={20} /> Save Changes</button>
-        </div>
-      </form>
+      </div>
     </div>
   );
 }

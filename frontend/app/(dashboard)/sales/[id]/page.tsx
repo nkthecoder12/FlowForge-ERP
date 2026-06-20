@@ -3,9 +3,12 @@
 import React from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useSales } from '@/hooks/useSales';
+import { useManufacturing } from '@/hooks/useManufacturing';
+import { useAuth } from '@/hooks/useAuth';
 import { 
   Package, Loader2, Calendar, User, Phone, Mail, 
-  AlertTriangle, ArrowLeft, CheckCircle, Clock 
+  AlertTriangle, ArrowLeft, CheckCircle, Clock,
+  ArrowRight, ShieldAlert, Check, X, FileText, Settings
 } from 'lucide-react';
 import { format } from 'date-fns';
 import Link from 'next/link';
@@ -18,6 +21,9 @@ export default function SalesOrderDetailPage() {
   const id = params.id as string;
   const router = useRouter();
   const { useGet, confirm: confirmOrder, deliver, cancel, isConfirming, isDelivering, isCancelling } = useSales();
+  const { create: requestProduction, isCreating: isRequestingProduction } = useManufacturing();
+  const { user } = useAuth();
+  const userRole = user?.role || 'sales';
   const { data: order, isLoading, isError } = useGet(id);
 
   if (isLoading) {
@@ -69,6 +75,14 @@ export default function SalesOrderDetailPage() {
     }
   };
 
+  const handleRequestProduction = async () => {
+    try {
+      await requestProduction({ salesOrderId: id });
+    } catch {
+      // Handled by toast
+    }
+  };
+
   // Shortage parser helper
   const parseShortageAnalysis = (notes: string | null | undefined) => {
     if (!notes) return null;
@@ -85,11 +99,221 @@ export default function SalesOrderDetailPage() {
   const getOriginalNotes = (notes: string | null | undefined) => {
     if (!notes) return '';
     const delimiter = '\n\n[Shortage Analysis]\n';
-    return notes.split(delimiter)[0];
+    const firstPart = notes.split(delimiter)[0];
+    const triggerDelimiter = '\n\n[Production Rejected]';
+    return firstPart.split(triggerDelimiter)[0];
   };
 
   const shortageReport = parseShortageAnalysis(order.notes);
   const originalNotes = getOriginalNotes(order.notes);
+
+  // Timeline construction
+  const buildBusinessTimeline = () => {
+    const timelineItems = [];
+
+    // Step 1: Sales Order Created
+    timelineItems.push({
+      label: 'Sales Order Created',
+      status: 'checked' as const,
+      timestamp: order.createdAt,
+      owner: order.creator?.name || 'Sales Executive',
+      dept: 'Sales',
+      details: 'Customer order registered in draft status.',
+    });
+
+    // Step 2: Production Request Raised (if MOs exist)
+    const mos = (order as any).manufacturingOrders || [];
+    const hasMo = mos.length > 0;
+    const primaryMo = mos[0];
+
+    timelineItems.push({
+      label: 'Production Requested',
+      status: hasMo ? ('checked' as const) : ('pending' as const),
+      timestamp: primaryMo?.createdAt,
+      owner: primaryMo?.creator?.name || 'Sales Executive',
+      dept: 'Sales',
+      details: hasMo ? `MO generated: ${mos.map((m: any) => m.orderNumber).join(', ')}` : 'Awaiting production trigger for stock shortages.',
+    });
+
+    // Step 3: PM Decision
+    let pmStatus: 'checked' | 'pending' | 'failed' = 'pending';
+    let pmDetails = 'Awaiting decision on production feasibility.';
+    let pmOwner = 'Ravi Sharma';
+    let pmTimestamp = undefined;
+
+    if (hasMo) {
+      const isRejected = mos.some((m: any) => m.status === 'cancelled');
+      const isApproved = mos.some((m: any) => ['confirmed', 'in_progress', 'completed'].includes(m.status));
+
+      if (isRejected) {
+        pmStatus = 'failed';
+        pmDetails = 'Rejection reason: Capacity constraints or material missing.';
+        pmOwner = 'Ravi Sharma';
+        pmTimestamp = primaryMo.updatedAt;
+      } else if (isApproved) {
+        pmStatus = 'checked';
+        pmDetails = 'BOM exploded, capacity checked & scheduled.';
+        pmOwner = 'Ravi Sharma';
+        pmTimestamp = primaryMo.updatedAt;
+      }
+    }
+
+    timelineItems.push({
+      label: 'PM Approval Decision',
+      status: pmStatus,
+      timestamp: pmTimestamp,
+      owner: pmOwner,
+      dept: 'Product Manager',
+      details: pmDetails,
+    });
+
+    // Step 4: Procurement Requested (if POs exist)
+    const pos = (order as any).purchaseOrders || [];
+    const hasPo = pos.length > 0;
+    const primaryPo = pos[0];
+
+    timelineItems.push({
+      label: 'Procurement Requested',
+      status: hasPo ? ('checked' as const) : hasMo && pmStatus === 'checked' ? ('checked' as const) : ('pending' as const),
+      timestamp: primaryPo?.createdAt || (pmStatus === 'checked' ? primaryMo?.updatedAt : undefined),
+      owner: 'Procurement Engine',
+      dept: 'Supply Chain',
+      details: hasPo ? `Draft RFQs generated: ${pos.map((p: any) => p.orderNumber).join(', ')}` : 'Materials stock optimal. Direct production confirmed.',
+    });
+
+    // Step 5: Vendor Quotations & PO Confirmed
+    let poStatus: 'checked' | 'pending' | 'failed' = 'pending';
+    let poDetails = 'Comparing vendor cost and lead times.';
+    let poTimestamp = undefined;
+
+    if (hasPo) {
+      const allConfirmed = pos.every((p: any) => ['confirmed', 'received'].includes(p.status));
+      if (allConfirmed) {
+        poStatus = 'checked';
+        poDetails = `Vendor approved. Purchase orders dispatch locked.`;
+        poTimestamp = primaryPo.confirmedAt || primaryPo.updatedAt;
+      } else {
+        poStatus = 'pending';
+        poDetails = 'Reviewing vendor ratings & cost bids.';
+      }
+    } else if (hasMo && pmStatus === 'checked') {
+      poStatus = 'checked';
+      poDetails = 'No raw materials shortage found. Skipped procurement.';
+    }
+
+    timelineItems.push({
+      label: 'RFQ Vendor Selected',
+      status: poStatus,
+      timestamp: poTimestamp,
+      owner: 'Amit Patel',
+      dept: 'Procurement',
+      details: poDetails,
+    });
+
+    // Step 6: Materials Received
+    let recStatus: 'checked' | 'pending' | 'failed' = 'pending';
+    let recDetails = 'Awaiting incoming supplier shipments.';
+    let recTimestamp = undefined;
+
+    if (hasPo) {
+      const allReceived = pos.every((p: any) => p.status === 'received');
+      const isCancelled = pos.some((p: any) => p.status === 'cancelled');
+
+      if (allReceived) {
+        recStatus = 'checked';
+        recDetails = 'Quality checked, quantity verified & received into warehouse.';
+        recTimestamp = primaryPo.receivedAt;
+      } else if (isCancelled) {
+        recStatus = 'failed';
+        recDetails = 'Supplier delivery rejected due to quality check failure.';
+        recTimestamp = primaryPo.updatedAt;
+      }
+    } else if (hasMo && pmStatus === 'checked') {
+      recStatus = 'checked';
+      recDetails = 'All components available on hand. Skipped receipt.';
+    }
+
+    timelineItems.push({
+      label: 'Materials Verified',
+      status: recStatus,
+      timestamp: recTimestamp,
+      owner: 'Neha Gupta',
+      dept: 'Inventory',
+      details: recDetails,
+    });
+
+    // Step 7: Manufacturing Started
+    let startStatus: 'checked' | 'pending' | 'failed' = 'pending';
+    let startDetails = 'Awaiting queue release on assembly floor.';
+    let startTimestamp = undefined;
+
+    if (hasMo) {
+      const anyStarted = mos.some((m: any) => ['in_progress', 'completed'].includes(m.status));
+      if (anyStarted) {
+        startStatus = 'checked';
+        startDetails = `Production run executing on CNC machinery.`;
+        startTimestamp = primaryMo.actualStart;
+      }
+    }
+
+    timelineItems.push({
+      label: 'Manufacturing Started',
+      status: startStatus,
+      timestamp: startTimestamp,
+      owner: 'Ravi Sharma',
+      dept: 'Product Manager',
+      details: startDetails,
+    });
+
+    // Step 8: Manufacturing Completed
+    let compStatus: 'checked' | 'pending' | 'failed' = 'pending';
+    let compDetails = 'Processing machine outputs and finishing touch.';
+    let compTimestamp = undefined;
+
+    if (hasMo) {
+      const allCompleted = mos.every((m: any) => m.status === 'completed');
+      if (allCompleted) {
+        compStatus = 'checked';
+        compDetails = 'Finished goods passed quality inspection.';
+        compTimestamp = primaryMo.actualEnd;
+      }
+    }
+
+    timelineItems.push({
+      label: 'Manufacturing Completed',
+      status: compStatus,
+      timestamp: compTimestamp,
+      owner: 'Ravi Sharma',
+      dept: 'Product Manager',
+      details: compDetails,
+    });
+
+    // Step 9: Ready for Delivery
+    const isReady = ['ready', 'delivered'].includes(order.status);
+    timelineItems.push({
+      label: 'Ready for Delivery',
+      status: isReady ? ('checked' as const) : ('pending' as const),
+      timestamp: isReady ? order.confirmedAt : undefined, // estimation
+      owner: 'System Allocation',
+      dept: 'Inventory',
+      details: isReady ? 'Stock reserved and allocated for delivery routing.' : 'Awaiting completed stocks verification.',
+    });
+
+    // Step 10: Delivered
+    const isDelivered = order.status === 'delivered';
+    timelineItems.push({
+      label: 'Dispatched & Delivered',
+      status: isDelivered ? ('checked' as const) : ('pending' as const),
+      timestamp: order.deliveredAt,
+      owner: 'Neha Gupta',
+      dept: 'Inventory',
+      details: isDelivered ? 'Shipment signed and delivered to customer.' : 'Awaiting dispatcher scheduling.',
+    });
+
+    return timelineItems;
+  };
+
+  const timelineSteps = buildBusinessTimeline();
 
   return (
     <div className="space-y-6">
@@ -120,6 +344,16 @@ export default function SalesOrderDetailPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          {order.status === 'shortage_detected' && (userRole === 'sales' || userRole === 'admin') && (
+            <Button 
+              type="button" 
+              className="bg-[#4B164C] hover:bg-[#4b164c]/90 border-0" 
+              onClick={handleRequestProduction} 
+              isLoading={isRequestingProduction}
+            >
+              Request Production
+            </Button>
+          )}
           {(order.status === 'draft' || order.status === 'shortage_detected') && (
             <Button type="button" onClick={handleConfirmAction} isLoading={isConfirming}>
               Confirm & Check Stock
@@ -293,38 +527,61 @@ export default function SalesOrderDetailPage() {
             </div>
           </div>
 
-          {/* Timeline / Metadata Panel */}
+          {/* Connected Business Timeline Panel */}
           <div className="glass-card p-6 space-y-4">
             <h3 className="text-base font-bold text-brand-primary flex items-center gap-2">
               <Clock size={18} />
-              Order Timeline
+              Connected Business Timeline
             </h3>
 
-            <div className="space-y-4 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="text-text-muted w-24">Date Created:</span>
-                <span className="text-text-secondary font-medium">
-                  {format(new Date(order.createdAt), 'MMM d, yyyy HH:mm')}
-                </span>
-              </div>
+            <div className="relative pl-1.5 space-y-5">
+              {/* Timeline vertical bar */}
+              <div className="absolute left-[13px] top-2 bottom-2 w-px bg-surface-border" />
 
-              {order.confirmedAt && (
-                <div className="flex items-center gap-2">
-                  <span className="text-text-muted w-24">Date Confirmed:</span>
-                  <span className="text-text-secondary font-medium">
-                    {format(new Date(order.confirmedAt), 'MMM d, yyyy HH:mm')}
-                  </span>
-                </div>
-              )}
+              {timelineSteps.map((step, idx) => {
+                const isChecked = step.status === 'checked';
+                const isFailed = step.status === 'failed';
+                const isPending = step.status === 'pending';
 
-              {order.deliveredAt && (
-                <div className="flex items-center gap-2">
-                  <span className="text-text-muted w-24">Date Shipped:</span>
-                  <span className="text-text-secondary font-medium">
-                    {format(new Date(order.deliveredAt), 'MMM d, yyyy HH:mm')}
-                  </span>
-                </div>
-              )}
+                return (
+                  <div key={idx} className="flex gap-3 text-xs relative group">
+                    {/* Circle Node */}
+                    <div className="z-10 mt-1 shrink-0">
+                      {isChecked ? (
+                        <span className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center border-4 border-white shadow-sm">
+                          <Check size={10} className="stroke-[3]" />
+                        </span>
+                      ) : isFailed ? (
+                        <span className="w-6 h-6 rounded-full bg-rose-500 text-white flex items-center justify-center border-4 border-white shadow-sm">
+                          <X size={10} className="stroke-[3]" />
+                        </span>
+                      ) : (
+                        <span className="w-6 h-6 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center border-4 border-white shadow-sm group-hover:bg-slate-300 transition-colors" />
+                      )}
+                    </div>
+
+                    <div className="space-y-0.5">
+                      <div className="flex justify-between items-baseline gap-2">
+                        <span className={`font-bold ${isPending ? 'text-text-muted' : isFailed ? 'text-rose-500' : 'text-text-primary'}`}>
+                          {step.label}
+                        </span>
+                        {step.timestamp && (
+                          <span className="text-[10px] text-text-muted whitespace-nowrap font-medium">
+                            {format(new Date(step.timestamp), 'MMM d, HH:mm')}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[10px] text-[#4B164C] font-semibold">
+                        <span>{step.dept}</span>
+                        {step.owner && <span>• {step.owner}</span>}
+                      </div>
+                      <p className="text-[11px] text-text-secondary leading-relaxed">
+                        {step.details}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -332,7 +589,7 @@ export default function SalesOrderDetailPage() {
           {originalNotes && (
             <div className="glass-card p-6 space-y-3">
               <h3 className="text-xs font-bold text-text-secondary uppercase tracking-wider">Internal Notes</h3>
-              <p className="text-xs p-3.5 bg-surface-input rounded-xl border border-surface-border text-text-secondary leading-relaxed">
+              <p className="text-xs p-3.5 bg-surface-input rounded-xl border border-surface-border text-text-secondary leading-relaxed font-medium">
                 {originalNotes}
               </p>
             </div>
