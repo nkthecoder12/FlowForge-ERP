@@ -1,4 +1,4 @@
-# FlowForge ERP — Intelligent Manufacturing ERP
+# FlowForge ERP  Intelligent Manufacturing ERP
 
 A production-quality Mini ERP system built for a furniture manufacturing company to replace spreadsheets, WhatsApp messages, and paper records.
 
