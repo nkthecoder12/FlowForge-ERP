@@ -1,5 +1,6 @@
 import prisma from '@/lib/server/db';
 import { createAuditLog } from '@/lib/server/utils/auditLog';
+import { generateManufacturingOrderNumber } from '@/lib/server/utils/order-number';
 import { bomsService } from '../boms/boms.service';
 import type { UserRole } from '@prisma/client';
 
@@ -77,6 +78,21 @@ export class ManufacturingService {
       throw Object.assign(new Error('Sales Order not found'), { statusCode: 404 });
     }
 
+    // Guard: check if an active (non-cancelled) MO already exists for this sales order
+    const existingMOs = await prisma.manufacturingOrder.findMany({
+      where: {
+        triggeredBySoId: salesOrderId,
+        status: { notIn: ['cancelled'] },
+      },
+    });
+
+    if (existingMOs.length > 0) {
+      throw Object.assign(
+        new Error('A production request for this sales order already exists. Check the Manufacturing workspace.'),
+        { statusCode: 409 }
+      );
+    }
+
     const createdOrders = await prisma.$transaction(async (tx) => {
       const ordersToCreate: any[] = [];
       
@@ -103,9 +119,12 @@ export class ManufacturingService {
             );
           }
 
+          // Generate a unique MO order number
+          const orderNumber = await generateManufacturingOrderNumber(tx);
+
           const mo = await tx.manufacturingOrder.create({
             data: {
-              orderNumber: '',
+              orderNumber,
               productId: item.productId,
               bomId: activeBom.id,
               quantityToProduce: shortage,

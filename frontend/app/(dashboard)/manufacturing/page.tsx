@@ -28,10 +28,24 @@ export default function ManufacturingPage() {
   const [machineSelection, setMachineSelection] = useState('Machine CNC-A');
   const [showStartModal, setShowStartModal] = useState(false);
 
-  // Expanded Rows State
+  // Expanded Rows State — auto-expand the first draft order so PM sees BOM immediately
   const [expandedMoId, setExpandedMoId] = useState<string | null>(null);
 
+  // Track auto-expanded so we only do it once on load
+  const [autoExpandDone, setAutoExpandDone] = useState(false);
+
   const canEdit = userRole === 'admin' || userRole === 'product_manager';
+
+  // Auto-expand BOM for the first pending draft request so PM sees recipe on arrival
+  React.useEffect(() => {
+    if (!autoExpandDone && orders && orders.length > 0) {
+      const firstDraft = orders.find((o: any) => o.status === 'draft');
+      if (firstDraft) {
+        setExpandedMoId(firstDraft.id);
+      }
+      setAutoExpandDone(true);
+    }
+  }, [orders, autoExpandDone]);
 
   if (isLoading) {
     return (
@@ -209,9 +223,13 @@ export default function ManufacturingPage() {
                         <td className="p-4 text-center">
                           <button 
                             onClick={() => toggleRow(mo.id)}
-                            className="p-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold"
+                            className={`p-1 rounded text-xs font-bold transition-colors ${
+                              isExpanded 
+                                ? 'bg-brand-primary/10 text-brand-primary hover:bg-brand-primary/20' 
+                                : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                            }`}
                           >
-                            {isExpanded ? 'Hide' : 'BOM'}
+                            {isExpanded ? 'Hide' : 'BOM ↓'}
                           </button>
                         </td>
                         <td className="p-4 font-mono font-bold text-brand-primary">
