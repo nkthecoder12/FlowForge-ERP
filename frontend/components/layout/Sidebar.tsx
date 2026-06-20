@@ -7,16 +7,22 @@ import {
   LayoutDashboard, 
   Users, 
   ShieldAlert, 
-  Settings, 
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Package,
+  ClipboardList,
+  Warehouse,
+  ShoppingCart
 } from 'lucide-react';
 
 const MENU_ITEMS = [
-  { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'sales', 'purchase', 'inventory', 'product_manager'] },
+  { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'product_manager', 'sales', 'inventory'] },
+  { name: 'Products', path: '/products', icon: Package, roles: ['admin', 'product_manager', 'sales', 'inventory'] },
+  { name: 'Bill of Materials', path: '/bom', icon: ClipboardList, roles: ['admin', 'product_manager'] },
+  { name: 'Inventory', path: '/inventory', icon: Warehouse, roles: ['admin', 'inventory'] },
+  { name: 'Sales Orders', path: '/sales', icon: ShoppingCart, roles: ['admin', 'sales'] },
   { name: 'Users', path: '/users', icon: Users, roles: ['admin'] },
   { name: 'Audit Logs', path: '/audit', icon: ShieldAlert, roles: ['admin'] },
-  { name: 'Settings', path: '/settings', icon: Settings, roles: ['admin'] },
 ];
 
 export default function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (val: boolean) => void }) {

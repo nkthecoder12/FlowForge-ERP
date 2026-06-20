@@ -13,10 +13,9 @@ export interface AuditLog {
 export interface DashboardStats {
   kpis: {
     totalProducts: number;
-    totalUsers: number;
-    salesOrders: number;
-    purchaseOrders: number;
-    manufacturingOrders: number;
+    totalSalesOrders: number;
+    pendingSalesOrders: number;
+    shortageOrders: number;
     lowStockCount: number;
   };
   lowStockProducts: {

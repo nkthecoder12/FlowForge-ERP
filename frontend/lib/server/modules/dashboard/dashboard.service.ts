@@ -4,33 +4,33 @@ export class DashboardService {
   async getStats() {
     const [
       totalProducts,
-      totalUsers,
-      salesOrdersCount,
-      purchaseOrdersCount,
-      manufacturingOrdersCount,
-      lowStockProducts,
+      totalSalesOrders,
+      pendingSalesOrdersCount,
+      shortageOrdersCount,
+      products,
       recentAuditLogs,
     ] = await Promise.all([
       prisma.product.count({ where: { isActive: true } }),
-      prisma.user.count({ where: { isActive: true } }),
       prisma.salesOrder.count(),
-      prisma.purchaseOrder.count(),
-      prisma.manufacturingOrder.count(),
-      prisma.product.findMany({
+      prisma.salesOrder.count({
         where: {
-          isActive: true,
-          AND: [{ minStockLevel: { gt: 0 } }],
+          status: { in: ['draft', 'confirmed', 'shortage_detected', 'ready'] },
         },
+      }),
+      prisma.salesOrder.count({
+        where: { status: 'shortage_detected' },
+      }),
+      prisma.product.findMany({
+        where: { isActive: true },
         select: {
           id: true,
           name: true,
           sku: true,
           onHandQuantity: true,
+          reservedQuantity: true,
           minStockLevel: true,
           unitOfMeasure: true,
         },
-        orderBy: { onHandQuantity: 'asc' },
-        take: 10,
       }),
       prisma.auditLog.findMany({
         orderBy: { createdAt: 'desc' },
@@ -47,20 +47,36 @@ export class DashboardService {
       }),
     ]);
 
-    const actualLowStock = lowStockProducts.filter(
-      (p) => Number(p.onHandQuantity) <= Number(p.minStockLevel),
-    );
+    // Calculate low stock products (free quantity <= minStockLevel)
+    const lowStockProducts = products
+      .map((p) => {
+        const onHand = Number(p.onHandQuantity);
+        const reserved = Number(p.reservedQuantity);
+        const freeQty = onHand - reserved;
+        const minStock = Number(p.minStockLevel);
+        return {
+          id: p.id,
+          name: p.name,
+          sku: p.sku,
+          onHandQuantity: onHand,
+          reservedQuantity: reserved,
+          freeQuantity: freeQty,
+          minStockLevel: minStock,
+          unitOfMeasure: p.unitOfMeasure,
+          isLowStock: freeQty <= minStock,
+        };
+      })
+      .filter((p) => p.isLowStock);
 
     return {
       kpis: {
         totalProducts,
-        totalUsers,
-        salesOrders: salesOrdersCount,
-        purchaseOrders: purchaseOrdersCount,
-        manufacturingOrders: manufacturingOrdersCount,
-        lowStockCount: actualLowStock.length,
+        totalSalesOrders,
+        pendingSalesOrders: pendingSalesOrdersCount,
+        shortageOrders: shortageOrdersCount,
+        lowStockCount: lowStockProducts.length,
       },
-      lowStockProducts: actualLowStock,
+      lowStockProducts: lowStockProducts.slice(0, 10),
       recentActivity: recentAuditLogs,
     };
   }

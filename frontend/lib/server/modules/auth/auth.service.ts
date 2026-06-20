@@ -37,6 +37,7 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: user.role,
+      name: user.name,
     };
 
     const accessToken = generateAccessToken(jwtPayload);
@@ -87,6 +88,7 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: user.role,
+      name: user.name,
     };
 
     const accessToken = generateAccessToken(jwtPayload);
@@ -126,6 +128,7 @@ export class AuthService {
         sub: user.id,
         email: user.email,
         role: user.role,
+        name: user.name,
       });
 
       return { accessToken: newAccessToken };

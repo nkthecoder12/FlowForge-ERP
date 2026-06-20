@@ -29,7 +29,8 @@ enum ProcurementStrategy {
 enum SalesOrderStatus {
   draft
   confirmed
-  partially_delivered
+  shortage_detected
+  ready
   delivered
   cancelled
 }
