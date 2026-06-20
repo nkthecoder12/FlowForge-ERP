@@ -1,4 +1,4 @@
-# FlowForge ERP  Intelligent Manufacturing ERP
+# FlowForge ERP — Intelligent Manufacturing ERP
 
 A production-quality Mini ERP system built for a furniture manufacturing company to replace spreadsheets, WhatsApp messages, and paper records.
 
@@ -6,10 +6,10 @@ A production-quality Mini ERP system built for a furniture manufacturing company
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | Next.js 14 (App Router + TypeScript) |
-| Backend | Node.js + Express |
+| Full-stack | Next.js 15 (App Router + TypeScript) |
 | Database | Supabase PostgreSQL |
-| Auth | JWT (Access + Refresh Tokens) |
+| ORM | Prisma |
+| Auth | JWT (Access + Refresh Tokens, httpOnly cookies) |
 | Styling | Tailwind CSS |
 | API Client | Axios |
 
@@ -45,25 +45,31 @@ Customer Order → Stock Check → Shortage Detection → Procurement Decision
 ## Quick Start
 
 ### 1. Setup Supabase
-Run `database/schema.sql` in your Supabase SQL editor.
 
-### 2. Backend
+Run `database/schema.sql` in your Supabase SQL editor, or use Prisma migrations:
+
 ```bash
-cd backend
-cp .env.example .env   # fill in your values
-npm install
-npm run dev
+cd frontend
+npm run prisma:migrate
 ```
 
-### 3. Frontend
+### 2. Configure environment
+
 ```bash
 cd frontend
 cp .env.example .env.local   # fill in your values
 npm install
+```
+
+### 3. Run the app
+
+```bash
 npm run dev
 ```
 
 Open http://localhost:3000
+
+API routes are served at `/api/*` on the same origin — no separate backend server needed.
 
 ## Project Structure
 
@@ -71,18 +77,24 @@ Open http://localhost:3000
 FlowForge-ERP/
 ├── database/
 │   └── schema.sql
-├── backend/
-│   ├── src/
-│   │   ├── controllers/
-│   │   ├── routes/
-│   │   ├── services/
-│   │   ├── middleware/
-│   │   └── utils/
-│   └── package.json
 └── frontend/
     ├── app/
+    │   ├── api/          # Next.js Route Handlers (API)
+    │   └── (pages)/      # UI routes
+    ├── lib/
+    │   └── server/       # Server-only logic (services, auth, db)
+    ├── prisma/           # Schema, migrations, seed
     ├── components/
-    ├── services/
-    ├── hooks/
-    └── context/
+    ├── services/         # Client-side API clients
+    └── hooks/
 ```
+
+## Scripts
+
+| Script | Description |
+|--------|-------------|
+| `npm run dev` | Start development server |
+| `npm run build` | Generate Prisma client and build for production |
+| `npm run prisma:migrate` | Run database migrations |
+| `npm run prisma:seed` | Seed default admin user |
+| `npm run prisma:studio` | Open Prisma Studio |
