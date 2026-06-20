@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const refresh = searchParams.get('refresh') === 'true';
 
-    const insights = await aiEngineService.getInsights(refresh);
+    const insights = await aiEngineService.getInsights(refresh, user.role);
     
     return jsonSuccess(
       {

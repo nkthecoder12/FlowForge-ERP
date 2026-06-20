@@ -74,6 +74,7 @@ export interface DashboardStats {
     preferredVendor: string;
     riskScore: string;
   }[];
+  aiInsights?: any;
 }
 
 export const dashboardApi = {

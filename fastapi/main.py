@@ -1,8 +1,8 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from schemas import ChatRequest, ChatResponse
-from agent import app as agent_app
+from schemas import ChatRequest, ChatResponse, InsightsRequest
+from agent import app as agent_app, generate_insights
 
 app = FastAPI(title="FlowForge ERP AI Copilot", version="1.0.0")
 
@@ -34,6 +34,17 @@ async def chat_endpoint(request: ChatRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/insights")
+async def insights_endpoint(request: InsightsRequest):
+    """
+    Endpoint for generating role-aware dashboard insights.
+    """
+    try:
+        insights = generate_insights(request.context, request.role)
+        return insights
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
@@ -42,3 +53,4 @@ async def health_check():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+

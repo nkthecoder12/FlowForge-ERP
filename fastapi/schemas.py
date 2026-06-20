@@ -1,4 +1,4 @@
-from typing import TypedDict
+from typing import TypedDict, Any
 from pydantic import BaseModel
 
 class ERPState(TypedDict, total=False):
@@ -15,3 +15,8 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     answer: str
+
+class InsightsRequest(BaseModel):
+    role: str
+    context: dict
+

@@ -1,3 +1,7 @@
+/**
+ * @deprecated This service is deprecated. All Grok LLM interactions are now consolidated 
+ * and managed by the FastAPI backend agent layer at `/api/insights` and `/api/chat`.
+ */
 import axios from 'axios';
 
 export class GrokService {

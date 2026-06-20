@@ -1,40 +1,36 @@
 import { aiContextService } from './ai-context.service';
-import { grokService } from './grok.service';
 
 interface CacheEntry {
   timestamp: number;
   data: any;
 }
 
-let cachedInsight: CacheEntry | null = null;
+let cachedInsights: Record<string, CacheEntry> = {};
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 export class AIEngineService {
-  async getInsights(bypassCache = false) {
+  async getInsights(bypassCache = false, role = 'admin') {
     const now = Date.now();
-    if (!bypassCache && cachedInsight && now - cachedInsight.timestamp < CACHE_DURATION) {
-      console.log('[AIEngineService] Returning cached AI insights');
-      return cachedInsight.data;
+    const cacheKey = role.toLowerCase();
+    
+    if (!bypassCache && cachedInsights[cacheKey] && now - cachedInsights[cacheKey].timestamp < CACHE_DURATION) {
+      console.log(`[AIEngineService] Returning cached AI insights for role: ${role}`);
+      return cachedInsights[cacheKey].data;
     }
 
-    console.log('[AIEngineService] Generating fresh AI insights...');
+    console.log(`[AIEngineService] Generating fresh AI insights for role: ${role}...`);
     const context = await aiContextService.getLiveContext();
 
     let insights: any;
-    if (process.env.GROK_API_KEY) {
-      try {
-        insights = await this.queryGrok(context);
-        console.log('[AIEngineService] Successfully generated insights using Grok LLM');
-      } catch (err: any) {
-        console.warn('[AIEngineService] Grok LLM failed, falling back to local business logic:', err.message);
-        insights = this.generateLocalFallback(context);
-      }
-    } else {
-      console.log('[AIEngineService] No GROK_API_KEY detected. Running local operational decision logic...');
+    try {
+      insights = await this.queryFastAPIAgent(context, role);
+      console.log(`[AIEngineService] Successfully generated insights using FastAPI Agent for role: ${role}`);
+    } catch (err: any) {
+      console.warn(`[AIEngineService] FastAPI Agent failed, falling back to local business logic:`, err.message);
       insights = this.generateLocalFallback(context);
     }
 
-    cachedInsight = {
+    cachedInsights[cacheKey] = {
       timestamp: now,
       data: insights,
     };
@@ -42,65 +38,26 @@ export class AIEngineService {
     return insights;
   }
 
-  private async queryGrok(context: any) {
-    const systemPrompt = `You are an ERP Operations Intelligence Engine helping a furniture manufacturing company make operational decisions.
-Analyze the provided live inventory, sales, manufacturing, procurement, and timeline audit logs.
-Generate:
-1. Operational Health Score (0-100) and department breakdown (inventory, manufacturing, procurement, sales).
-2. Critical Risks (include risk, severity [High, Medium, Low], reason, and targeted user roles affected: admin, sales, purchase, inventory, product_manager).
-3. Recommended Actions (include action, impact [Critical, High, Medium, Low], reason, and targeted user roles).
-4. Procurement Suggestions (include name, sku, currentStock, consumption, daysRemaining, suggestedOrder, preferredVendor, riskScore, urgency, reason).
-5. Manufacturing Bottlenecks (include moNumber, product, delayRisk [percentage string], reason, urgency [High, Medium, Low]).
-6. Executive Summary (CEO Operations Digest summarizing current demand, material shortages, PO/MO delays, revenue impact, and immediate action).
+  private async queryFastAPIAgent(context: any, role: string) {
+    const fastapiUrl = process.env.FASTAPI_URL || 'http://localhost:8000';
+    const response = await fetch(`${fastapiUrl}/api/insights`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        role,
+        context,
+      }),
+    });
 
-You MUST return JSON format only. Follow this exact schema:
-{
-  "operationalHealthScore": number,
-  "operationalHealthBreakdown": {
-    "inventory": number,
-    "manufacturing": number,
-    "procurement": number,
-    "sales": number
-  },
-  "criticalRisks": [
-    { "risk": "string", "severity": "string", "reason": "string", "roles": ["string"] }
-  ],
-  "recommendations": [
-    { "action": "string", "impact": "string", "reason": "string", "roles": ["string"] }
-  ],
-  "procurementInsights": [
-    {
-      "name": "string",
-      "sku": "string",
-      "currentStock": number,
-      "consumption": number,
-      "daysRemaining": number,
-      "suggestedOrder": number,
-      "preferredVendor": "string",
-      "riskScore": "string",
-      "urgency": "string",
-      "reason": "string"
+    if (!response.ok) {
+      throw new Error(`FastAPI agent returned status ${response.status}`);
     }
-  ],
-  "manufacturingInsights": [
-    {
-      "moNumber": "string",
-      "product": "string",
-      "delayRisk": "string",
-      "reason": "string",
-      "urgency": "string"
-    }
-  ],
-  "executiveSummary": "string"
-}`;
 
-    const prompt = `Here is the current live ERP context from our Postgres database:
-${JSON.stringify(context, null, 2)}
-
-Provide the structured operational decision recommendations.`;
-
-    return grokService.generateStructuredInsight(prompt, systemPrompt);
+    return await response.json();
   }
+
 
   private generateLocalFallback(context: any) {
     // 1. Calculate Health Score
