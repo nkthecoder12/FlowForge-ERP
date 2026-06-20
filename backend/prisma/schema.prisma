@@ -1,0 +1,445 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================================
+// ENUM TYPES
+// ============================================================
+
+enum UserRole {
+  admin
+  product_manager
+  sales
+  purchase
+  inventory
+}
+
+enum ProcurementType {
+  purchase
+  manufacture
+}
+
+enum ProcurementStrategy {
+  mts
+  mto
+}
+
+enum SalesOrderStatus {
+  draft
+  confirmed
+  partially_delivered
+  delivered
+  cancelled
+}
+
+enum PurchaseOrderStatus {
+  draft
+  confirmed
+  partially_received
+  received
+  cancelled
+}
+
+enum ManufacturingOrderStatus {
+  draft
+  confirmed
+  in_progress
+  completed
+  cancelled
+}
+
+enum MovementType {
+  purchase_receipt
+  sales_delivery
+  manufacturing_consume
+  manufacturing_produce
+  stock_adjustment
+  stock_reservation
+  reservation_release
+}
+
+enum AuditAction {
+  user_created
+  user_updated
+  user_deleted
+  product_created
+  product_updated
+  product_deleted
+  bom_created
+  bom_updated
+  bom_deleted
+  sales_order_created
+  sales_order_confirmed
+  sales_order_delivered
+  sales_order_cancelled
+  purchase_order_created
+  purchase_order_confirmed
+  purchase_order_received
+  purchase_order_cancelled
+  manufacturing_order_created
+  manufacturing_order_started
+  manufacturing_order_completed
+  manufacturing_order_cancelled
+  stock_adjusted
+  stock_reserved
+  stock_reservation_released
+}
+
+// ============================================================
+// TABLE: users
+// ============================================================
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  name         String    @db.VarChar(100)
+  email        String    @unique @db.VarChar(150)
+  passwordHash String    @map("password_hash") @db.Text
+  role         UserRole  @default(sales)
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  createdProducts      Product[]           @relation("ProductCreator")
+  createdBoms          Bom[]               @relation("BomCreator")
+  createdSalesOrders   SalesOrder[]        @relation("SalesOrderCreator")
+  confirmedSalesOrders SalesOrder[]        @relation("SalesOrderConfirmer")
+  deliveredSalesOrders  SalesOrder[]        @relation("SalesOrderDeliverer")
+  createdPurchaseOrders PurchaseOrder[]     @relation("PurchaseOrderCreator")
+  confirmedPurchaseOrders PurchaseOrder[]    @relation("PurchaseOrderConfirmer")
+  receivedPurchaseOrders  PurchaseOrder[]   @relation("PurchaseOrderReceiver")
+  createdManufacturingOrders ManufacturingOrder[] @relation("ManufacturingOrderCreator")
+  auditLogs            AuditLog[]
+  inventoryMovements   InventoryMovement[] @relation("MovementCreator")
+
+  @@index([email])
+  @@index([role])
+  @@index([isActive])
+  @@map("users")
+}
+
+// ============================================================
+// TABLE: products
+// ============================================================
+
+model Product {
+  id                   String             @id @default(uuid()) @db.Uuid
+  name                 String             @db.VarChar(200)
+  sku                  String             @unique @db.VarChar(100)
+  description          String?            @db.Text
+  category             String?            @db.VarChar(100)
+  unitOfMeasure        String             @default("pcs") @map("unit_of_measure") @db.VarChar(50)
+  salesPrice           Decimal            @default(0) @map("sales_price") @db.Decimal(12, 2)
+  costPrice            Decimal            @default(0) @map("cost_price") @db.Decimal(12, 2)
+  onHandQuantity       Decimal            @default(0) @map("on_hand_quantity") @db.Decimal(12, 2)
+  reservedQuantity     Decimal            @default(0) @map("reserved_quantity") @db.Decimal(12, 2)
+  minStockLevel        Decimal            @default(0) @map("min_stock_level") @db.Decimal(12, 2)
+  reorderQuantity      Decimal            @default(0) @map("reorder_quantity") @db.Decimal(12, 2)
+  procurementType      ProcurementType    @default(purchase) @map("procurement_type")
+  procurementStrategy  ProcurementStrategy @default(mts) @map("procurement_strategy")
+  isActive             Boolean            @default(true) @map("is_active")
+  imageUrl             String?            @map("image_url") @db.Text
+  createdBy            String?            @map("created_by") @db.Uuid
+  createdAt            DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt            DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  creator              User?              @relation("ProductCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  bomHeaders           Bom[]              @relation("BomProduct")
+  bomComponents        BomItem[]          @relation("BomComponent")
+  salesOrderItems      SalesOrderItem[]
+  purchaseOrderItems    PurchaseOrderItem[]
+  manufacturingOrders  ManufacturingOrder[]
+  inventoryMovements   InventoryMovement[]
+
+  @@index([sku])
+  @@index([category])
+  @@index([isActive])
+  @@index([procurementType])
+  @@index([onHandQuantity, minStockLevel])
+  @@map("products")
+}
+
+// ============================================================
+// TABLE: boms (Bill of Materials headers)
+// ============================================================
+
+model Bom {
+  id         String    @id @default(uuid()) @db.Uuid
+  productId  String    @map("product_id") @db.Uuid
+  name       String    @db.VarChar(200)
+  quantity   Decimal   @default(1) @db.Decimal(12, 2)
+  isActive   Boolean   @default(true) @map("is_active")
+  notes      String?   @db.Text
+  createdBy  String?   @map("created_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  product    Product   @relation("BomProduct", fields: [productId], references: [id], onDelete: Cascade)
+  creator    User?     @relation("BomCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  items      BomItem[]
+  manufacturingOrders ManufacturingOrder[]
+
+  @@index([productId])
+  @@index([isActive])
+  @@map("boms")
+}
+
+// ============================================================
+// TABLE: bom_items (Bill of Materials line items)
+// ============================================================
+
+model BomItem {
+  id            String   @id @default(uuid()) @db.Uuid
+  bomId         String   @map("bom_id") @db.Uuid
+  componentId   String   @map("component_id") @db.Uuid
+  quantity      Decimal  @db.Decimal(12, 2)
+  unitOfMeasure String   @default("pcs") @map("unit_of_measure") @db.VarChar(50)
+  notes         String?  @db.Text
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  bom           Bom      @relation(fields: [bomId], references: [id], onDelete: Cascade)
+  component     Product  @relation("BomComponent", fields: [componentId], references: [id], onDelete: Restrict)
+
+  @@unique([bomId, componentId])
+  @@index([bomId])
+  @@index([componentId])
+  @@map("bom_items")
+}
+
+// ============================================================
+// TABLE: sales_orders (Sales Order headers)
+// ============================================================
+
+model SalesOrder {
+  id                String             @id @default(uuid()) @db.Uuid
+  orderNumber       String             @unique @map("order_number") @db.VarChar(50)
+  customerName      String             @map("customer_name") @db.VarChar(200)
+  customerEmail     String?            @map("customer_email") @db.VarChar(150)
+  customerPhone     String?            @map("customer_phone") @db.VarChar(50)
+  status            SalesOrderStatus   @default(draft)
+  orderDate         DateTime           @default(now()) @map("order_date") @db.Date
+  expectedDelivery  DateTime?          @map("expected_delivery") @db.Date
+  notes             String?            @db.Text
+  totalAmount       Decimal            @default(0) @map("total_amount") @db.Decimal(14, 2)
+  createdBy         String?            @map("created_by") @db.Uuid
+  confirmedBy       String?            @map("confirmed_by") @db.Uuid
+  confirmedAt       DateTime?          @map("confirmed_at") @db.Timestamptz
+  deliveredBy       String?            @map("delivered_by") @db.Uuid
+  deliveredAt       DateTime?          @map("delivered_at") @db.Timestamptz
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  creator           User?              @relation("SalesOrderCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  confirmer         User?              @relation("SalesOrderConfirmer", fields: [confirmedBy], references: [id], onDelete: SetNull)
+  deliverer         User?              @relation("SalesOrderDeliverer", fields: [deliveredBy], references: [id], onDelete: SetNull)
+  items             SalesOrderItem[]
+  purchaseOrders    PurchaseOrder[]
+  manufacturingOrders ManufacturingOrder[]
+  inventoryMovements InventoryMovement[]
+
+  @@index([orderNumber])
+  @@index([status])
+  @@index([orderDate])
+  @@index([createdBy])
+  @@map("sales_orders")
+}
+
+// ============================================================
+// TABLE: sales_order_items (Sales Order line items)
+// ============================================================
+
+model SalesOrderItem {
+  id                String   @id @default(uuid()) @db.Uuid
+  salesOrderId      String   @map("sales_order_id") @db.Uuid
+  productId         String   @map("product_id") @db.Uuid
+  quantityOrdered   Decimal  @map("quantity_ordered") @db.Decimal(12, 2)
+  quantityDelivered Decimal  @default(0) @map("quantity_delivered") @db.Decimal(12, 2)
+  unitPrice         Decimal  @map("unit_price") @db.Decimal(12, 2)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  salesOrder        SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+  product           Product    @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([salesOrderId])
+  @@index([productId])
+  @@map("sales_order_items")
+}
+
+// ============================================================
+// TABLE: purchase_orders (Purchase Order headers)
+// ============================================================
+
+model PurchaseOrder {
+  id               String               @id @default(uuid()) @db.Uuid
+  orderNumber      String               @unique @map("order_number") @db.VarChar(50)
+  vendorName       String               @map("vendor_name") @db.VarChar(200)
+  vendorEmail      String?              @map("vendor_email") @db.VarChar(150)
+  vendorPhone      String?              @map("vendor_phone") @db.VarChar(50)
+  status           PurchaseOrderStatus  @default(draft)
+  orderDate        DateTime             @default(now()) @map("order_date") @db.Date
+  expectedDelivery DateTime?            @map("expected_delivery") @db.Date
+  notes            String?              @db.Text
+  totalAmount      Decimal              @default(0) @map("total_amount") @db.Decimal(14, 2)
+  triggeredBySoId  String?              @map("triggered_by_so_id") @db.Uuid
+  createdBy        String?              @map("created_by") @db.Uuid
+  confirmedBy      String?              @map("confirmed_by") @db.Uuid
+  confirmedAt      DateTime?            @map("confirmed_at") @db.Timestamptz
+  receivedBy       String?              @map("received_by") @db.Uuid
+  receivedAt       DateTime?            @map("received_at") @db.Timestamptz
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  triggeredBySo    SalesOrder?          @relation(fields: [triggeredBySoId], references: [id], onDelete: SetNull)
+  creator          User?                @relation("PurchaseOrderCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  confirmer        User?                @relation("PurchaseOrderConfirmer", fields: [confirmedBy], references: [id], onDelete: SetNull)
+  receiver         User?                @relation("PurchaseOrderReceiver", fields: [receivedBy], references: [id], onDelete: SetNull)
+  items            PurchaseOrderItem[]
+  inventoryMovements InventoryMovement[]
+
+  @@index([orderNumber])
+  @@index([status])
+  @@index([vendorName])
+  @@index([triggeredBySoId])
+  @@map("purchase_orders")
+}
+
+// ============================================================
+// TABLE: purchase_order_items (Purchase Order line items)
+// ============================================================
+
+model PurchaseOrderItem {
+  id                String   @id @default(uuid()) @db.Uuid
+  purchaseOrderId   String   @map("purchase_order_id") @db.Uuid
+  productId         String   @map("product_id") @db.Uuid
+  quantityOrdered   Decimal  @map("quantity_ordered") @db.Decimal(12, 2)
+  quantityReceived  Decimal  @default(0) @map("quantity_received") @db.Decimal(12, 2)
+  unitCost          Decimal  @map("unit_cost") @db.Decimal(12, 2)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  purchaseOrder     PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  product           Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([purchaseOrderId])
+  @@index([productId])
+  @@map("purchase_order_items")
+}
+
+// ============================================================
+// TABLE: manufacturing_orders (Manufacturing Order headers)
+// ============================================================
+
+model ManufacturingOrder {
+  id                String                  @id @default(uuid()) @db.Uuid
+  orderNumber       String                  @unique @map("order_number") @db.VarChar(50)
+  productId         String                  @map("product_id") @db.Uuid
+  bomId             String                  @map("bom_id") @db.Uuid
+  quantityToProduce Decimal                 @map("quantity_to_produce") @db.Decimal(12, 2)
+  quantityProduced  Decimal                 @default(0) @map("quantity_produced") @db.Decimal(12, 2)
+  status            ManufacturingOrderStatus @default(draft)
+  scheduledStart    DateTime?               @map("scheduled_start") @db.Date
+  scheduledEnd      DateTime?               @map("scheduled_end") @db.Date
+  actualStart       DateTime?               @map("actual_start") @db.Timestamptz
+  actualEnd         DateTime?               @map("actual_end") @db.Timestamptz
+  notes             String?                 @db.Text
+  triggeredBySoId   String?                 @map("triggered_by_so_id") @db.Uuid
+  createdBy         String?                 @map("created_by") @db.Uuid
+  createdAt         DateTime                @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  product           Product                 @relation(fields: [productId], references: [id], onDelete: Restrict)
+  bom               Bom                     @relation(fields: [bomId], references: [id], onDelete: Restrict)
+  triggeredBySo     SalesOrder?             @relation(fields: [triggeredBySoId], references: [id], onDelete: SetNull)
+  creator           User?                   @relation("ManufacturingOrderCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  inventoryMovements InventoryMovement[]
+
+  @@index([productId])
+  @@index([bomId])
+  @@index([status])
+  @@index([triggeredBySoId])
+  @@map("manufacturing_orders")
+}
+
+// ============================================================
+// TABLE: inventory_movements (Stock Ledger)
+// ============================================================
+
+model InventoryMovement {
+  id              String       @id @default(uuid()) @db.Uuid
+  productId       String       @map("product_id") @db.Uuid
+  movementType    MovementType @map("movement_type")
+  quantity        Decimal      @db.Decimal(12, 2)
+  direction       Int          @db.SmallInt
+  quantityBefore  Decimal      @map("quantity_before") @db.Decimal(12, 2)
+  quantityAfter   Decimal      @map("quantity_after") @db.Decimal(12, 2)
+  referenceSoId   String?      @map("reference_so_id") @db.Uuid
+  referencePoId   String?      @map("reference_po_id") @db.Uuid
+  referenceMoId   String?      @map("reference_mo_id") @db.Uuid
+  notes           String?      @db.Text
+  createdBy       String?      @map("created_by") @db.Uuid
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  product         Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  referenceSo     SalesOrder?  @relation(fields: [referenceSoId], references: [id], onDelete: SetNull)
+  referencePo     PurchaseOrder? @relation(fields: [referencePoId], references: [id], onDelete: SetNull)
+  referenceMo     ManufacturingOrder? @relation(fields: [referenceMoId], references: [id], onDelete: SetNull)
+  creator         User?        @relation("MovementCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+
+  @@index([productId])
+  @@index([movementType])
+  @@index([createdAt])
+  @@index([referenceSoId])
+  @@index([referencePoId])
+  @@index([referenceMoId])
+  @@map("inventory_movements")
+}
+
+// ============================================================
+// TABLE: audit_logs (Immutable Action Trail)
+// ============================================================
+
+model AuditLog {
+  id          String      @id @default(uuid()) @db.Uuid
+  userId      String?     @map("user_id") @db.Uuid
+  userName    String?     @map("user_name") @db.VarChar(100)
+  userRole    UserRole?   @map("user_role")
+  action      AuditAction
+  entityType  String      @map("entity_type") @db.VarChar(100)
+  entityId    String?     @map("entity_id") @db.Uuid
+  entityName  String?     @map("entity_name") @db.VarChar(200)
+  oldValues   Json?       @map("old_values") @db.JsonB
+  newValues   Json?       @map("new_values") @db.JsonB
+  ipAddress   String?     @map("ip_address") @db.VarChar(45)
+  userAgent   String?     @map("user_agent") @db.Text
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations - only user relation, entityId is a generic reference
+  user        User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([entityType])
+  @@index([entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
