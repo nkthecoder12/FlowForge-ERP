@@ -36,8 +36,25 @@ export async function generatePurchaseOrderNumber(tx: TransactionClient): Promis
 }
 
 export class ManufacturingService {
+  private async mapMoStatus(mo: any) {
+    if (!mo || mo.status !== 'confirmed') {
+      return mo;
+    }
+
+    const bomExplosion = await bomsService.explode(mo.productId, Number(mo.quantityToProduce));
+    if (!bomExplosion.hasBom) {
+      return mo;
+    }
+
+    const hasShortages = bomExplosion.materials.some((mat) => mat.shortage > 0);
+    return {
+      ...mo,
+      status: hasShortages ? 'WAITING_FOR_PROCUREMENT' : 'READY_TO_START',
+    };
+  }
+
   async list() {
-    return prisma.manufacturingOrder.findMany({
+    const mos = await prisma.manufacturingOrder.findMany({
       include: {
         product: true,
         bom: {
@@ -52,6 +69,8 @@ export class ManufacturingService {
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    return Promise.all(mos.map(mo => this.mapMoStatus(mo)));
   }
 
   async getById(id: string) {
@@ -75,7 +94,7 @@ export class ManufacturingService {
       throw Object.assign(new Error('Manufacturing Order not found'), { statusCode: 404 });
     }
 
-    return mo;
+    return this.mapMoStatus(mo);
   }
 
   async createFromSalesOrder(
@@ -237,6 +256,18 @@ export class ManufacturingService {
           recommendedVendor = 'Rainbow Coatings';
         }
 
+        const shortageDetailsText = missingMaterials.map(m => `- ${m.product}: Shortage ${m.shortage} (Required ${m.required}, Available ${m.available})`).join('\n');
+        const poNotes = `[Procurement Request Metadata]
+Manufacturing Order ID: ${mo.id}
+Manufacturing Order Number: ${mo.orderNumber}
+Sales Order ID: ${mo.triggeredBySoId || 'None'}
+Sales Order Number: ${mo.triggeredBySo?.orderNumber || 'None'}
+Finished Product Name: ${mo.product.name}
+Required Materials:
+${shortageDetailsText}
+Priority: High
+Status: WAITING_FOR_PROCUREMENT`;
+
         const createdPo = await tx.purchaseOrder.create({
           data: {
             orderNumber: poNumber,
@@ -246,7 +277,7 @@ export class ManufacturingService {
             status: 'draft',
             triggeredBySoId: mo.triggeredBySoId,
             createdBy: actorId,
-            notes: `Procurement request generated automatically for shortages on Manufacturing Order ${mo.orderNumber}.`,
+            notes: poNotes,
           },
         });
 
@@ -269,7 +300,7 @@ export class ManufacturingService {
 
         const totalAmount = missingMaterials.reduce((sum, mat) => {
           const reorderQty = mat.required;
-          return sum + reorderQty * 100; // rough estimation or query cost
+          return sum + reorderQty * 100;
         }, 0);
 
         return tx.purchaseOrder.update({
@@ -290,6 +321,56 @@ export class ManufacturingService {
       });
       updatedMo = await this.getById(moId);
 
+      // Write parent Sales Order notes to update timeline trace
+      if (mo.triggeredBySoId) {
+        const so = await prisma.salesOrder.findUnique({ where: { id: mo.triggeredBySoId } });
+        if (so) {
+          await prisma.salesOrder.update({
+            where: { id: mo.triggeredBySoId },
+            data: {
+              notes: `${so.notes || ''}\n\n[Shortage Detected] PM Approved MO ${mo.orderNumber}. Material shortages detected. Automatically generated Purchase Order ${po.orderNumber}.`,
+            },
+          });
+        }
+      }
+
+      // Write Audit Log: Manufacturing Approved
+      await createAuditLog({
+        userId: actorId,
+        userName: actorName,
+        userRole: actorRole,
+        action: 'bom_exploded',
+        entityType: 'manufacturing_order',
+        entityId: mo.id,
+        entityName: `Manufacturing Approved: MO ${mo.orderNumber} approved by PM`,
+        newValues: { action: 'approved', moId: mo.id, moNumber: mo.orderNumber },
+      });
+
+      // Write Audit Log: Raw Material Check Completed
+      await createAuditLog({
+        userId: actorId,
+        userName: actorName,
+        userRole: actorRole,
+        action: 'bom_exploded',
+        entityType: 'manufacturing_order',
+        entityId: mo.id,
+        entityName: `Raw Material Check Completed: BOM components requirement validated`,
+        newValues: { moNumber: mo.orderNumber, requirements: bomExplosion.materials },
+      });
+
+      // Write Audit Log: Material Shortage Detected
+      await createAuditLog({
+        userId: actorId,
+        userName: actorName,
+        userRole: actorRole,
+        action: 'shortage_detected',
+        entityType: 'manufacturing_order',
+        entityId: mo.id,
+        entityName: `Material Shortage Detected: missing components for MO ${mo.orderNumber}`,
+        newValues: { moNumber: mo.orderNumber, shortages: missingMaterials },
+      });
+
+      // Write Audit Log: Procurement Request Created
       await createAuditLog({
         userId: actorId,
         userName: actorName,
@@ -297,11 +378,8 @@ export class ManufacturingService {
         action: 'purchase_order_created',
         entityType: 'purchase_order',
         entityId: po.id,
-        entityName: po.orderNumber,
-        newValues: {
-          moNumber: mo.orderNumber,
-          items: missingMaterials.map((m) => ({ name: m.product, quantity: m.shortage })),
-        },
+        entityName: `Procurement Request Created: Draft PO ${po.orderNumber} generated`,
+        newValues: { poId: po.id, poNumber: po.orderNumber, vendor: po.vendorName, items: missingMaterials },
       });
     } else {
       // All raw materials available
@@ -313,25 +391,60 @@ export class ManufacturingService {
         },
       });
       updatedMo = await this.getById(moId);
-    }
 
-    await createAuditLog({
-      userId: actorId,
-      userName: actorName,
-      userRole: actorRole,
-      action: 'bom_exploded',
-      entityType: 'manufacturing_order',
-      entityId: mo.id,
-      entityName: mo.orderNumber,
-      newValues: {
-        action: 'approved',
-        hasShortages,
-        missingMaterials: missingMaterials.map((m) => ({ component: m.product, shortage: m.shortage })),
-      },
-    });
+      // Write parent Sales Order notes to update timeline trace
+      if (mo.triggeredBySoId) {
+        const so = await prisma.salesOrder.findUnique({ where: { id: mo.triggeredBySoId } });
+        if (so) {
+          await prisma.salesOrder.update({
+            where: { id: mo.triggeredBySoId },
+            data: {
+              notes: `${so.notes || ''}\n\n[Manufacturing Ready] PM Approved MO ${mo.orderNumber}. All components available. Ready to start manufacturing.`,
+            },
+          });
+        }
+      }
+
+      // Write Audit Log: Manufacturing Approved
+      await createAuditLog({
+        userId: actorId,
+        userName: actorName,
+        userRole: actorRole,
+        action: 'bom_exploded',
+        entityType: 'manufacturing_order',
+        entityId: mo.id,
+        entityName: `Manufacturing Approved: MO ${mo.orderNumber} approved by PM`,
+        newValues: { action: 'approved', moId: mo.id, moNumber: mo.orderNumber },
+      });
+
+      // Write Audit Log: Raw Material Check Completed
+      await createAuditLog({
+        userId: actorId,
+        userName: actorName,
+        userRole: actorRole,
+        action: 'bom_exploded',
+        entityType: 'manufacturing_order',
+        entityId: mo.id,
+        entityName: `Raw Material Check Completed: BOM components requirement validated`,
+        newValues: { moNumber: mo.orderNumber, requirements: bomExplosion.materials },
+      });
+
+      // Write Audit Log: Manufacturing Ready
+      await createAuditLog({
+        userId: actorId,
+        userName: actorName,
+        userRole: actorRole,
+        action: 'bom_exploded',
+        entityType: 'manufacturing_order',
+        entityId: mo.id,
+        entityName: `Manufacturing Ready: All components allocated. MO ${mo.orderNumber} ready to start`,
+        newValues: { moNumber: mo.orderNumber, status: 'READY_TO_START' },
+      });
+    }
 
     return updatedMo;
   }
+
 
   async reject(
     moId: string,
@@ -398,8 +511,8 @@ export class ManufacturingService {
   ) {
     const mo = await this.getById(moId);
 
-    if (mo.status !== 'confirmed') {
-      throw Object.assign(new Error('Only confirmed manufacturing orders can be started'), {
+    if (mo.status !== 'READY_TO_START') {
+      throw Object.assign(new Error('Only ready-to-start manufacturing orders can be started'), {
         statusCode: 400,
       });
     }

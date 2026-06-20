@@ -111,130 +111,166 @@ export default function SalesOrderDetailPage() {
   const buildBusinessTimeline = () => {
     const timelineItems = [];
 
-    // Step 1: Sales Order Created
-    timelineItems.push({
-      label: 'Sales Order Created',
-      status: 'checked' as const,
-      timestamp: order.createdAt,
-      owner: order.creator?.name || 'Sales Executive',
-      dept: 'Sales',
-      details: 'Customer order registered in draft status.',
-    });
-
-    // Step 2: Production Request Raised (if MOs exist)
     const mos = (order as any).manufacturingOrders || [];
     const hasMo = mos.length > 0;
     const primaryMo = mos[0];
 
-    timelineItems.push({
-      label: 'Production Requested',
-      status: hasMo ? ('checked' as const) : ('pending' as const),
-      timestamp: primaryMo?.createdAt,
-      owner: primaryMo?.creator?.name || 'Sales Executive',
-      dept: 'Sales',
-      details: hasMo ? `MO generated: ${mos.map((m: any) => m.orderNumber).join(', ')}` : 'Awaiting production trigger for stock shortages.',
-    });
-
-    // Step 3: PM Decision
-    let pmStatus: 'checked' | 'pending' | 'failed' = 'pending';
-    let pmDetails = 'Awaiting decision on production feasibility.';
-    let pmOwner = 'Ravi Sharma';
-    let pmTimestamp = undefined;
-
-    if (hasMo) {
-      const isRejected = mos.some((m: any) => m.status === 'cancelled');
-      const isApproved = mos.some((m: any) => ['confirmed', 'in_progress', 'completed'].includes(m.status));
-
-      if (isRejected) {
-        pmStatus = 'failed';
-        pmDetails = 'Rejection reason: Capacity constraints or material missing.';
-        pmOwner = 'Ravi Sharma';
-        pmTimestamp = primaryMo.updatedAt;
-      } else if (isApproved) {
-        pmStatus = 'checked';
-        pmDetails = 'BOM exploded, capacity checked & scheduled.';
-        pmOwner = 'Ravi Sharma';
-        pmTimestamp = primaryMo.updatedAt;
-      }
-    }
-
-    timelineItems.push({
-      label: 'PM Approval Decision',
-      status: pmStatus,
-      timestamp: pmTimestamp,
-      owner: pmOwner,
-      dept: 'Product Manager',
-      details: pmDetails,
-    });
-
-    // Step 4: Procurement Requested (if POs exist)
     const pos = (order as any).purchaseOrders || [];
     const hasPo = pos.length > 0;
     const primaryPo = pos[0];
 
+    // Step 1: Production Request Raised
+    timelineItems.push({
+      label: 'Production Request Raised',
+      status: hasMo ? ('checked' as const) : ('pending' as const),
+      timestamp: primaryMo?.createdAt,
+      owner: primaryMo?.creator?.name || 'Sales Executive',
+      dept: 'Sales',
+      details: hasMo 
+        ? `Production request generated. MO(s): ${mos.map((m: any) => m.orderNumber).join(', ')}`
+        : 'Awaiting production request trigger.',
+    });
+
+    // Step 2: PM Approved
+    let pmStatus: 'checked' | 'pending' | 'failed' = 'pending';
+    let pmDetails = 'Awaiting decision on production feasibility.';
+    let pmTimestamp = undefined;
+    if (hasMo) {
+      const isRejected = mos.some((m: any) => m.status === 'cancelled');
+      const isApproved = mos.some((m: any) => ['confirmed', 'in_progress', 'completed'].includes(m.status));
+      if (isRejected) {
+        pmStatus = 'failed';
+        pmDetails = 'Rejection reason: Capacity constraints or material missing.';
+        pmTimestamp = primaryMo.updatedAt;
+      } else if (isApproved) {
+        pmStatus = 'checked';
+        pmDetails = `PM approved production run of product recipe: ${order.items.map((i: any) => i.product.name).join(', ')}.`;
+        pmTimestamp = primaryMo.updatedAt;
+      }
+    }
+    timelineItems.push({
+      label: 'PM Approved',
+      status: pmStatus,
+      timestamp: pmTimestamp,
+      owner: 'Ravi Sharma',
+      dept: 'Product Manager',
+      details: pmDetails,
+    });
+
+    // Step 3: Raw Material Validation
+    let rmValStatus: 'checked' | 'pending' = 'pending';
+    let rmValDetails = 'Pending PM approval to validate raw materials.';
+    if (pmStatus === 'checked') {
+      rmValStatus = 'checked';
+      rmValDetails = 'BOM exploded, components requirement validated against stock levels.';
+    }
+    timelineItems.push({
+      label: 'Raw Material Validation',
+      status: rmValStatus,
+      timestamp: pmStatus === 'checked' ? primaryMo?.updatedAt : undefined,
+      owner: 'Ravi Sharma',
+      dept: 'Product Manager',
+      details: rmValDetails,
+    });
+
+    // Step 4: Shortage Detected
+    let shortageStatus: 'checked' | 'pending' = 'pending';
+    let shortageDetails = 'Awaiting components validation.';
+    if (pmStatus === 'checked') {
+      shortageStatus = 'checked';
+      if (hasPo) {
+        shortageDetails = 'Shortages identified: raw materials required are not available in stock.';
+      } else {
+        shortageDetails = 'BOM check complete. Sufficient raw materials available on hand.';
+      }
+    }
+    timelineItems.push({
+      label: 'Shortage Detected',
+      status: shortageStatus,
+      timestamp: pmStatus === 'checked' ? (primaryPo?.createdAt || primaryMo?.updatedAt) : undefined,
+      owner: 'Ravi Sharma',
+      dept: 'Product Manager',
+      details: shortageDetails,
+    });
+
+    // Step 5: Procurement Requested
+    let procStatus: 'checked' | 'pending' = 'pending';
+    let procDetails = 'Awaiting material shortage results.';
+    if (pmStatus === 'checked') {
+      procStatus = 'checked';
+      if (hasPo) {
+        procDetails = `Draft RFQs generated: ${pos.map((p: any) => p.orderNumber).join(', ')}`;
+      } else {
+        procDetails = 'Skipped: Sufficient raw materials available on hand.';
+      }
+    }
     timelineItems.push({
       label: 'Procurement Requested',
-      status: hasPo ? ('checked' as const) : hasMo && pmStatus === 'checked' ? ('checked' as const) : ('pending' as const),
+      status: procStatus,
       timestamp: primaryPo?.createdAt || (pmStatus === 'checked' ? primaryMo?.updatedAt : undefined),
       owner: 'Procurement Engine',
       dept: 'Supply Chain',
-      details: hasPo ? `Draft RFQs generated: ${pos.map((p: any) => p.orderNumber).join(', ')}` : 'Materials stock optimal. Direct production confirmed.',
+      details: procDetails,
     });
 
-    // Step 5: Vendor Quotations & PO Confirmed
-    let poStatus: 'checked' | 'pending' | 'failed' = 'pending';
-    let poDetails = 'Comparing vendor cost and lead times.';
-    let poTimestamp = undefined;
-
-    if (hasPo) {
-      const allConfirmed = pos.every((p: any) => ['confirmed', 'received'].includes(p.status));
-      if (allConfirmed) {
-        poStatus = 'checked';
-        poDetails = `Vendor approved. Purchase orders dispatch locked.`;
-        poTimestamp = primaryPo.confirmedAt || primaryPo.updatedAt;
+    // Step 6: Vendor Selected
+    let vendorStatus: 'checked' | 'pending' | 'failed' = 'pending';
+    let vendorDetails = 'Awaiting procurement request confirmation.';
+    let vendorTimestamp = undefined;
+    if (pmStatus === 'checked') {
+      if (hasPo) {
+        const allConfirmed = pos.every((p: any) => ['confirmed', 'received'].includes(p.status));
+        const anyCancelled = pos.some((p: any) => p.status === 'cancelled');
+        if (allConfirmed) {
+          vendorStatus = 'checked';
+          vendorDetails = `Vendor approved. Purchase orders dispatch locked.`;
+          vendorTimestamp = primaryPo.confirmedAt || primaryPo.updatedAt;
+        } else if (anyCancelled) {
+          vendorStatus = 'failed';
+          vendorDetails = 'Vendor quote selection failed or PO cancelled.';
+          vendorTimestamp = primaryPo.updatedAt;
+        } else {
+          vendorStatus = 'pending';
+          vendorDetails = 'Comparing vendor cost and lead times.';
+        }
       } else {
-        poStatus = 'pending';
-        poDetails = 'Reviewing vendor ratings & cost bids.';
+        vendorStatus = 'checked';
+        vendorDetails = 'Skipped: Procurement not required.';
       }
-    } else if (hasMo && pmStatus === 'checked') {
-      poStatus = 'checked';
-      poDetails = 'No raw materials shortage found. Skipped procurement.';
     }
-
     timelineItems.push({
       label: 'RFQ Vendor Selected',
-      status: poStatus,
-      timestamp: poTimestamp,
+      status: vendorStatus,
+      timestamp: vendorTimestamp,
       owner: 'Amit Patel',
       dept: 'Procurement',
-      details: poDetails,
+      details: vendorDetails,
     });
 
-    // Step 6: Materials Received
+    // Step 7: Materials Received
     let recStatus: 'checked' | 'pending' | 'failed' = 'pending';
     let recDetails = 'Awaiting incoming supplier shipments.';
     let recTimestamp = undefined;
-
-    if (hasPo) {
-      const allReceived = pos.every((p: any) => p.status === 'received');
-      const isCancelled = pos.some((p: any) => p.status === 'cancelled');
-
-      if (allReceived) {
+    if (pmStatus === 'checked') {
+      if (hasPo) {
+        const allReceived = pos.every((p: any) => p.status === 'received');
+        const isCancelled = pos.some((p: any) => p.status === 'cancelled');
+        if (allReceived) {
+          recStatus = 'checked';
+          recDetails = 'Quality checked, quantity verified & received into warehouse.';
+          recTimestamp = primaryPo.receivedAt;
+        } else if (isCancelled) {
+          recStatus = 'failed';
+          recDetails = 'Supplier delivery rejected due to quality check failure.';
+          recTimestamp = primaryPo.updatedAt;
+        }
+      } else {
         recStatus = 'checked';
-        recDetails = 'Quality checked, quantity verified & received into warehouse.';
-        recTimestamp = primaryPo.receivedAt;
-      } else if (isCancelled) {
-        recStatus = 'failed';
-        recDetails = 'Supplier delivery rejected due to quality check failure.';
-        recTimestamp = primaryPo.updatedAt;
+        recDetails = 'Skipped: Component inventory sufficient.';
       }
-    } else if (hasMo && pmStatus === 'checked') {
-      recStatus = 'checked';
-      recDetails = 'All components available on hand. Skipped receipt.';
     }
-
     timelineItems.push({
-      label: 'Materials Verified',
+      label: 'Materials Received',
       status: recStatus,
       timestamp: recTimestamp,
       owner: 'Neha Gupta',
@@ -242,20 +278,45 @@ export default function SalesOrderDetailPage() {
       details: recDetails,
     });
 
-    // Step 7: Manufacturing Started
-    let startStatus: 'checked' | 'pending' | 'failed' = 'pending';
-    let startDetails = 'Awaiting queue release on assembly floor.';
-    let startTimestamp = undefined;
+    // Step 8: Manufacturing Ready
+    let readyStatus: 'checked' | 'pending' = 'pending';
+    let readyDetails = 'Awaiting material allocation check.';
+    if (hasMo && pmStatus === 'checked') {
+      if (hasPo) {
+        const allReceived = pos.every((p: any) => p.status === 'received');
+        if (allReceived) {
+          readyStatus = 'checked';
+          readyDetails = 'All missing components received. Inventory allocated.';
+        } else {
+          readyStatus = 'pending';
+          readyDetails = 'Waiting for procurement to resolve raw material shortages.';
+        }
+      } else {
+        readyStatus = 'checked';
+        readyDetails = 'All components available. Ready to start manufacturing.';
+      }
+    }
+    timelineItems.push({
+      label: 'Manufacturing Ready',
+      status: readyStatus,
+      timestamp: pmStatus === 'checked' ? primaryMo?.updatedAt : undefined,
+      owner: 'Ravi Sharma',
+      dept: 'Product Manager',
+      details: readyDetails,
+    });
 
+    // Step 9: Manufacturing Started
+    let startStatus: 'checked' | 'pending' = 'pending';
+    let startDetails = 'Awaiting queue launch on shop floor.';
+    let startTimestamp = undefined;
     if (hasMo) {
       const anyStarted = mos.some((m: any) => ['in_progress', 'completed'].includes(m.status));
       if (anyStarted) {
         startStatus = 'checked';
-        startDetails = `Production run executing on CNC machinery.`;
+        startDetails = `Production run executing on machine.`;
         startTimestamp = primaryMo.actualStart;
       }
     }
-
     timelineItems.push({
       label: 'Manufacturing Started',
       status: startStatus,
@@ -265,20 +326,18 @@ export default function SalesOrderDetailPage() {
       details: startDetails,
     });
 
-    // Step 8: Manufacturing Completed
-    let compStatus: 'checked' | 'pending' | 'failed' = 'pending';
-    let compDetails = 'Processing machine outputs and finishing touch.';
+    // Step 10: Manufacturing Completed
+    let compStatus: 'checked' | 'pending' = 'pending';
+    let compDetails = 'Processing machine outputs and quality audits.';
     let compTimestamp = undefined;
-
     if (hasMo) {
       const allCompleted = mos.every((m: any) => m.status === 'completed');
       if (allCompleted) {
         compStatus = 'checked';
-        compDetails = 'Finished goods passed quality inspection.';
+        compDetails = 'Finished goods passed quality inspection and added to stock.';
         compTimestamp = primaryMo.actualEnd;
       }
     }
-
     timelineItems.push({
       label: 'Manufacturing Completed',
       status: compStatus,
@@ -286,28 +345,6 @@ export default function SalesOrderDetailPage() {
       owner: 'Ravi Sharma',
       dept: 'Product Manager',
       details: compDetails,
-    });
-
-    // Step 9: Ready for Delivery
-    const isReady = ['ready', 'delivered'].includes(order.status);
-    timelineItems.push({
-      label: 'Ready for Delivery',
-      status: isReady ? ('checked' as const) : ('pending' as const),
-      timestamp: isReady ? order.confirmedAt : undefined, // estimation
-      owner: 'System Allocation',
-      dept: 'Inventory',
-      details: isReady ? 'Stock reserved and allocated for delivery routing.' : 'Awaiting completed stocks verification.',
-    });
-
-    // Step 10: Delivered
-    const isDelivered = order.status === 'delivered';
-    timelineItems.push({
-      label: 'Dispatched & Delivered',
-      status: isDelivered ? ('checked' as const) : ('pending' as const),
-      timestamp: order.deliveredAt,
-      owner: 'Neha Gupta',
-      dept: 'Inventory',
-      details: isDelivered ? 'Shipment signed and delivered to customer.' : 'Awaiting dispatcher scheduling.',
     });
 
     return timelineItems;

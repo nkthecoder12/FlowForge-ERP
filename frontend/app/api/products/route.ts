@@ -17,12 +17,17 @@ export async function GET(request: Request) {
     const page = searchParams.get('page') ? Number(searchParams.get('page')) : 1;
     const limit = searchParams.get('limit') ? Number(searchParams.get('limit')) : 20;
 
+    const productType = user.role === 'sales'
+      ? 'finished_good'
+      : (searchParams.get('productType') as 'raw_material' | 'finished_good' || undefined);
+
     const result = await productsService.list({
       search,
       category,
       procurementType,
       page,
       limit,
+      productType,
     });
 
     return jsonSuccess(result, 'Products fetched successfully');

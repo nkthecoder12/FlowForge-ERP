@@ -10,9 +10,9 @@ export const metadata: Metadata = {
 export default function LoginPage() {
   return (
     <AuthLayout>
-      <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold text-brand-primary mb-2 tracking-tight">Welcome Back</h1>
-        <p className="text-text-secondary text-sm">Enter your credentials to access the ERP</p>
+      <div className="text-left mb-5">
+        <h1 className="text-2xl font-extrabold text-[#4B164C] tracking-tight">Sign In</h1>
+        <p className="text-text-secondary text-xs font-semibold mt-1">Enter your credentials to access the manufacturing engine.</p>
       </div>
       <LoginForm />
     </AuthLayout>

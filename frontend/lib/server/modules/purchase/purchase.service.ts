@@ -1,6 +1,7 @@
 import prisma from '@/lib/server/db';
 import { createAuditLog } from '@/lib/server/utils/auditLog';
 import { generatePurchaseOrderNumber } from '../manufacturing/manufacturing.service';
+import { bomsService } from '../boms/boms.service';
 import type { UserRole } from '@prisma/client';
 
 export class PurchaseService {
@@ -124,7 +125,7 @@ export class PurchaseService {
       action: 'purchase_order_confirmed',
       entityType: 'purchase_order',
       entityId: po.id,
-      entityName: po.orderNumber,
+      entityName: `Procurement Request Sent: PO ${po.orderNumber} confirmed`,
       newValues: {
         status: 'confirmed',
       },
@@ -202,9 +203,23 @@ export class PurchaseService {
         action: 'purchase_order_received',
         entityType: 'purchase_order',
         entityId: po.id,
-        entityName: po.orderNumber,
+        entityName: `Material Received: PO ${po.orderNumber} materials received`,
         newValues: {
           status: 'received',
+        },
+      });
+
+      await createAuditLog({
+        userId: actorId,
+        userName: actorName,
+        userRole: actorRole,
+        action: 'stock_adjusted',
+        entityType: 'product',
+        entityId: po.id,
+        entityName: `Inventory Updated: Raw materials added to stock`,
+        newValues: {
+          poNumber: po.orderNumber,
+          items: po.items.map(item => ({ productId: item.productId, quantity: item.quantityOrdered })),
         },
       });
 
@@ -224,6 +239,24 @@ export class PurchaseService {
               notes: `${mo.notes || ''}\n\n[Receipt Notification] Raw materials received under PO ${po.orderNumber}. Ready for manufacturing start.`,
             },
           });
+
+          // Check if shortages are now resolved
+          const bomExplosion = await bomsService.explode(mo.productId, Number(mo.quantityToProduce));
+          const hasShortages = bomExplosion.materials.some((mat) => mat.shortage > 0);
+          
+          if (!hasShortages) {
+            // Write Audit Log: Manufacturing Ready
+            await createAuditLog({
+              userId: actorId,
+              userName: actorName,
+              userRole: actorRole,
+              action: 'bom_exploded',
+              entityType: 'manufacturing_order',
+              entityId: mo.id,
+              entityName: `Manufacturing Ready: All components allocated. MO ${mo.orderNumber} ready to start`,
+              newValues: { moNumber: mo.orderNumber, status: 'READY_TO_START' },
+            });
+          }
         }
       }
 

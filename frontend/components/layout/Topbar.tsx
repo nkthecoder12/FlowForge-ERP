@@ -16,8 +16,26 @@ export default function Topbar({
   aiOpen: boolean;
   setAiOpen: (val: boolean) => void;
 }) {
-  const { logout, isLoggingOut, user } = useAuth();
+  const { logout, isLoggingOut, user, login } = useAuth();
   const [showWorkspaceMenu, setShowWorkspaceMenu] = useState(false);
+  const [showRoleMenu, setShowRoleMenu] = useState(false);
+
+  const rolesList = [
+    { name: 'Super Admin', email: 'admin@shivfurniture.com', role: 'admin' },
+    { name: 'Sales Executive', email: 'priya@shivfurniture.com', role: 'sales' },
+    { name: 'Product Manager', email: 'ravi@shivfurniture.com', role: 'product_manager' },
+    { name: 'Procurement Mgr', email: 'amit@shivfurniture.com', role: 'purchase' },
+    { name: 'Inventory Manager', email: 'neha@shivfurniture.com', role: 'inventory' },
+  ];
+
+  const handleSwitchRole = async (email: string) => {
+    try {
+      await login({ email, password: 'Admin@123' });
+      window.location.reload();
+    } catch (e) {
+      console.error('Failed to switch role', e);
+    }
+  };
 
   return (
     <header className="h-16 bg-white border-b border-surface-border flex items-center justify-between px-6 z-10 shrink-0 sticky top-0">
@@ -53,6 +71,49 @@ export default function Topbar({
                   <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
                   IN North Warehouse (Transit)
                 </button>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Demo Role Switcher */}
+        <div className="relative">
+          <button
+            onClick={() => setShowRoleMenu(!showRoleMenu)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-surface-hover/30 text-xs font-bold border border-brand-accent/25 bg-[#F8E7F6]/40 text-[#4B164C] hover:text-brand-hover hover:border-brand-accent transition-all duration-200"
+            title="Instant Demo Role Switcher"
+          >
+            <Sparkles size={13} className="text-brand-accent animate-pulse" />
+            <span className="hidden sm:inline">Role:</span>
+            <span className="capitalize">{user?.role?.replace('_', ' ')}</span>
+            <ChevronDown size={13} className="text-text-muted" />
+          </button>
+          
+          {showRoleMenu && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowRoleMenu(false)} />
+              <div className="absolute left-0 mt-1 w-64 bg-white border border-surface-border rounded-xl shadow-lg z-50 p-1.5 space-y-1 animate-fade-in">
+                <div className="px-3 py-1.5 text-[10px] font-bold text-text-muted uppercase tracking-wider border-b border-slate-100 pb-1.5 mb-1">
+                  Demo Sandbox Role Switcher
+                </div>
+                {rolesList.map((r) => (
+                  <button
+                    key={r.role}
+                    onClick={() => {
+                      setShowRoleMenu(false);
+                      handleSwitchRole(r.email);
+                    }}
+                    className={`w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-xs font-medium flex items-center justify-between transition-colors ${
+                      user?.role === r.role ? 'bg-[#F8E7F6]/30 text-[#4B164C] font-semibold' : 'text-text-secondary hover:text-[#4B164C]'
+                    }`}
+                  >
+                    <div className="flex flex-col text-left">
+                      <span>{r.name}</span>
+                      <span className="text-[9px] text-text-muted">{r.email}</span>
+                    </div>
+                    {user?.role === r.role && <span className="w-1.5 h-1.5 rounded-full bg-brand-primary" />}
+                  </button>
+                ))}
               </div>
             </>
           )}

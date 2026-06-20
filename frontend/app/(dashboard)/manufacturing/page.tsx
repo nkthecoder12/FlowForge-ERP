@@ -5,7 +5,7 @@ import { useManufacturing } from '@/hooks/useManufacturing';
 import { useAuth } from '@/hooks/useAuth';
 import { 
   Hammer, Loader2, AlertTriangle, Play, CheckCircle2, 
-  Calendar, Check, X, ClipboardList, Info, Cpu, Layers
+  Calendar, Check, X, ClipboardList, Info, Cpu, Layers, Lock
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Button } from '@/components/ui/Button';
@@ -231,6 +231,8 @@ export default function ManufacturingPage() {
                           <Badge
                             variant={
                               mo.status === 'draft' ? 'gray' :
+                              mo.status === 'WAITING_FOR_PROCUREMENT' ? 'red' :
+                              mo.status === 'READY_TO_START' ? 'green' :
                               mo.status === 'confirmed' ? 'blue' :
                               mo.status === 'in_progress' ? 'amber' :
                               mo.status === 'completed' ? 'green' : 'red'
@@ -268,13 +270,22 @@ export default function ManufacturingPage() {
                               </>
                             )}
                             
-                            {mo.status === 'confirmed' && canEdit && (
+                            {mo.status === 'READY_TO_START' && canEdit && (
                               <Button 
                                   className="bg-[#4B164C] hover:bg-[#4B164C]/95 border-0 text-white font-semibold py-1 px-3 h-8 flex items-center gap-1.5"
                                   onClick={() => handleStartClick(mo.id)}
                                   isLoading={isStarting}
                                 >
                                 <Play size={12} fill="white" /> Start Execution
+                              </Button>
+                            )}
+
+                            {mo.status === 'WAITING_FOR_PROCUREMENT' && canEdit && (
+                              <Button 
+                                  className="bg-slate-200 border-0 text-slate-400 font-semibold py-1 px-3 h-8 flex items-center gap-1.5 cursor-not-allowed"
+                                  disabled
+                                >
+                                <Lock size={12} /> Start Execution
                               </Button>
                             )}
 

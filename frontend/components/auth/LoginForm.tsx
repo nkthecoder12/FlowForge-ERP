@@ -117,6 +117,66 @@ export default function LoginForm() {
           </>
         )}
       </button>
+
+      {/* Demo Sandbox Mode */}
+      <div className="pt-5 border-t border-slate-100 mt-5">
+        <p className="text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">
+          Reviewer Demo Quick-Access
+        </p>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            disabled={isLoggingIn}
+            onClick={() => login({ email: 'admin@shivfurniture.com', password: 'Admin@123' })}
+            className="flex flex-col items-start p-2.5 rounded-lg border border-purple-200 bg-purple-50/30 hover:bg-purple-50 text-left transition-all duration-150 disabled:opacity-50"
+          >
+            <span className="text-[10px] font-bold text-purple-700">Super Admin</span>
+            <span className="text-[9px] text-slate-400 truncate w-full">admin@shivfurniture.com</span>
+          </button>
+
+          <button
+            type="button"
+            disabled={isLoggingIn}
+            onClick={() => login({ email: 'priya@shivfurniture.com', password: 'Admin@123' })}
+            className="flex flex-col items-start p-2.5 rounded-lg border border-pink-200 bg-pink-50/30 hover:bg-pink-50 text-left transition-all duration-150 disabled:opacity-50"
+          >
+            <span className="text-[10px] font-bold text-pink-700">Sales Executive</span>
+            <span className="text-[9px] text-slate-400 truncate w-full">priya@shivfurniture.com</span>
+          </button>
+
+          <button
+            type="button"
+            disabled={isLoggingIn}
+            onClick={() => login({ email: 'ravi@shivfurniture.com', password: 'Admin@123' })}
+            className="flex flex-col items-start p-2.5 rounded-lg border border-[#4B164C]/20 bg-[#F8E7F6]/30 hover:bg-[#F8E7F6]/60 text-left transition-all duration-150 disabled:opacity-50"
+          >
+            <span className="text-[10px] font-bold text-[#4B164C]">Product Manager</span>
+            <span className="text-[9px] text-slate-400 truncate w-full">ravi@shivfurniture.com</span>
+          </button>
+
+          <button
+            type="button"
+            disabled={isLoggingIn}
+            onClick={() => login({ email: 'amit@shivfurniture.com', password: 'Admin@123' })}
+            className="flex flex-col items-start p-2.5 rounded-lg border border-amber-200 bg-amber-50/30 hover:bg-amber-50 text-left transition-all duration-150 disabled:opacity-50"
+          >
+            <span className="text-[10px] font-bold text-amber-700">Procurement Mgr</span>
+            <span className="text-[9px] text-slate-400 truncate w-full">amit@shivfurniture.com</span>
+          </button>
+
+          <button
+            type="button"
+            disabled={isLoggingIn}
+            onClick={() => login({ email: 'neha@shivfurniture.com', password: 'Admin@123' })}
+            className="flex flex-col items-start p-2.5 rounded-lg border border-slate-200 bg-slate-50/50 hover:bg-slate-100 text-left transition-all duration-150 col-span-2 disabled:opacity-50"
+          >
+            <div className="flex justify-between w-full items-center">
+              <span className="text-[10px] font-bold text-slate-700">Inventory Manager</span>
+              <span className="text-[9px] text-slate-400">neha@shivfurniture.com</span>
+            </div>
+          </button>
+        </div>
+      </div>
     </form>
   );
 }

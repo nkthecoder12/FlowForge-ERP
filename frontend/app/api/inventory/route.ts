@@ -9,7 +9,7 @@ export async function GET() {
     const user = await requireRole('admin', 'inventory', 'product_manager', 'sales');
     if (isErrorResponse(user)) return user;
 
-    const inventory = await inventoryService.list();
+    const inventory = await inventoryService.list(user.role);
     return jsonSuccess(inventory, 'Inventory fetched successfully');
   });
 }

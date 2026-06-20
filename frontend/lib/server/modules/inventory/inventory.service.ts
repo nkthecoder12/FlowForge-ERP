@@ -3,9 +3,14 @@ import { createAuditLog } from '@/lib/server/utils/auditLog';
 import type { UserRole } from '@prisma/client';
 
 export class InventoryService {
-  async list() {
+  async list(role?: string) {
+    const where: Record<string, any> = { isActive: true };
+    if (role === 'sales') {
+      where.productType = 'finished_good';
+    }
+
     const products = await prisma.product.findMany({
-      where: { isActive: true },
+      where,
       orderBy: { name: 'asc' },
     });
 

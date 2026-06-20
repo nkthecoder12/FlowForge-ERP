@@ -11,8 +11,9 @@ export class ProductsService {
     isActive?: boolean;
     page?: number;
     limit?: number;
+    productType?: 'raw_material' | 'finished_good';
   }) {
-    const { search, category, procurementType, isActive = true, page = 1, limit = 20 } = filters;
+    const { search, category, procurementType, isActive = true, page = 1, limit = 20, productType } = filters;
     const skip = (page - 1) * limit;
 
     const where: Record<string, any> = { isActive };
@@ -24,6 +25,7 @@ export class ProductsService {
     }
     if (category) where.category = category;
     if (procurementType) where.procurementType = procurementType as ProcurementType;
+    if (productType) where.productType = productType;
 
     const [products, total] = await Promise.all([
       prisma.product.findMany({

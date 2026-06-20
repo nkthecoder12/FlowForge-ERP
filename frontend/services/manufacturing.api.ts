@@ -9,7 +9,7 @@ export interface ApiManufacturingOrder {
   bomId: string;
   quantityToProduce: string | number;
   quantityProduced: string | number;
-  status: 'draft' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
+  status: 'draft' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'WAITING_FOR_PROCUREMENT' | 'READY_TO_START';
   scheduledStart?: string;
   scheduledEnd?: string;
   actualStart?: string;
