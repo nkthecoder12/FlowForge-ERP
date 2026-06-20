@@ -1,109 +1,243 @@
 'use client';
 
 import { useBom } from '@/hooks/useBom';
-import { Plus, ClipboardList, Loader2 } from 'lucide-react';
+import { Plus, ClipboardList, ChevronDown, ChevronUp, Info, IndianRupee, Edit2 } from 'lucide-react';
 import Link from 'next/link';
 import EmptyState from '@/components/ui/EmptyState';
 import { format } from 'date-fns';
 import { useAuth } from '@/hooks/useAuth';
 import Badge from '@/components/ui/Badge';
-import React from 'react';
+import React, { useState } from 'react';
+import Skeleton from '@/components/ui/Skeleton';
 
 export default function BomPage() {
   const { user } = useAuth();
   const { useList } = useBom();
   const { data: boms, isLoading, isError } = useList();
+  
+  // Track expanded rows on the client
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
+
+  const toggleRow = (id: string) => {
+    setExpandedRows(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
 
   const isPMOrAdmin = user?.role === 'admin' || user?.role === 'product_manager';
 
+  // Calculate BoM statistics
+  const totalBoms = boms?.length || 0;
+  const activeBoms = boms?.filter(b => b.isActive).length || 0;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-slide-up">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
         <div>
           <h1 className="page-title">Bills of Materials (BoM)</h1>
-          <p className="page-subtitle">Define component recipes for finished assembly tables</p>
+          <p className="page-subtitle">Configure multi-level component recipes, raw material costings, and yields</p>
         </div>
         {isPMOrAdmin && (
-          <Link href="/bom/new" className="btn-primary">
-            <Plus size={20} />
-            Define BoM Recipe
+          <Link href="/bom/new" className="btn-primary text-xs flex items-center gap-1.5 bg-[#4B164C] hover:bg-[#381039]">
+            <Plus size={16} />
+            <span>Define BoM Recipe</span>
           </Link>
         )}
       </div>
 
+      {/* KPI stats */}
+      {isLoading ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-16" />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white border border-surface-border rounded-xl p-4 shadow-sm">
+            <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Total Recipes</span>
+            <p className="text-lg font-bold text-text-primary mt-0.5">{totalBoms}</p>
+          </div>
+          <div className="bg-white border border-surface-border rounded-xl p-4 shadow-sm">
+            <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Active Recipes</span>
+            <p className="text-lg font-bold text-[#4B164C] mt-0.5">{activeBoms}</p>
+          </div>
+          <div className="bg-white border border-surface-border rounded-xl p-4 shadow-sm">
+            <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Material Class Count</span>
+            <p className="text-lg font-bold text-blue-600 mt-0.5">9 items</p>
+          </div>
+          <div className="bg-white border border-surface-border rounded-xl p-4 shadow-sm">
+            <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Status Code</span>
+            <p className="text-lg font-bold text-emerald-600 mt-0.5">Optimal</p>
+          </div>
+        </div>
+      )}
+
+      {/* Main Workspace Card */}
       <div className="glass-card flex flex-col min-h-[500px] overflow-hidden">
         <div className="flex-1 overflow-auto">
           {isLoading ? (
-            <div className="p-8 flex justify-center items-center h-full min-h-[300px]">
-              <Loader2 className="animate-spin text-brand-primary" size={32} />
+            <div className="p-6 space-y-4">
+              {[...Array(6)].map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
             </div>
           ) : isError ? (
-            <div className="p-8 text-center text-rose-400">Failed to load Bills of Materials</div>
+            <div className="p-8 text-center text-rose-500 font-medium">Failed to load Bills of Materials.</div>
           ) : !boms || boms.length === 0 ? (
             <div className="p-12">
               <EmptyState
                 title="No BoM Recipes Defined"
-                description="Create a Bill of Materials recipe linking finished tables to their raw material components (legs, top, screws)."
+                description="Configure a recipe linking your finished dining tables or chairs to their component raw materials."
                 icon={ClipboardList}
                 action={
                   isPMOrAdmin ? (
-                    <Link href="/bom/new" className="btn-primary">
-                      <Plus size={16} /> Define BoM Recipe
+                    <Link href="/bom/new" className="btn-primary text-xs bg-[#4B164C] hover:bg-[#381039]">
+                      <Plus size={14} /> Define First Recipe
                     </Link>
                   ) : undefined
                 }
               />
             </div>
           ) : (
-            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-              {boms.map((bom) => (
-                <div key={bom.id} className="bg-surface-card/30 border border-surface-border rounded-2xl p-5 hover:shadow-card-hover transition-all flex flex-col justify-between">
-                  <div>
-                    <div className="flex justify-between items-start gap-2 mb-3">
-                      <div>
-                        <h3 className="font-bold text-lg text-brand-primary leading-tight">{bom.name}</h3>
-                        <p className="text-xs text-text-secondary mt-1">Product: <span className="font-semibold">{bom.product.name} ({bom.product.sku})</span></p>
-                      </div>
-                      <Badge variant={bom.isActive ? 'green' : 'gray'}>
-                        {bom.isActive ? 'Active' : 'Inactive'}
-                      </Badge>
-                    </div>
+            <table className="erp-table">
+              <thead>
+                <tr>
+                  <th className="w-10"></th>
+                  <th>Finished Assembly</th>
+                  <th>Recipe Name</th>
+                  <th className="text-right">Yield Qty</th>
+                  <th className="text-right">Est. Material Cost</th>
+                  <th className="text-right">Components</th>
+                  <th>Status</th>
+                  <th>Last Updated</th>
+                  {isPMOrAdmin && <th className="text-right pr-6">Action</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {boms.map((bom) => {
+                  const isExpanded = !!expandedRows[bom.id];
+                  
+                  // Calculate total material cost dynamically
+                  const totalCost = bom.items.reduce((acc: number, item: any) => {
+                    return acc + (Number(item.quantity) * Number(item.component.costPrice));
+                  }, 0);
+                  
+                  const materialCount = bom.items.length;
 
-                    <p className="text-xs text-text-muted mb-4">
-                      Yield output rate: <span className="font-bold text-brand-primary">{Number(bom.quantity)} {bom.product.unitOfMeasure}</span> per run.
-                    </p>
-
-                    {bom.notes && (
-                      <div className="p-3 bg-surface-input/50 rounded-xl text-xs text-text-secondary border border-surface-border/30 mb-4">
-                        <span className="font-bold text-text-primary block mb-0.5">Notes:</span>
-                        {bom.notes}
-                      </div>
-                    )}
-
-                    <div className="space-y-2 mb-4">
-                      <h4 className="text-xs font-semibold text-text-primary uppercase tracking-wider">Components:</h4>
-                      <div className="divide-y divide-surface-border/30">
-                        {bom.items.map((item) => (
-                          <div key={item.id} className="py-2 flex items-center justify-between text-xs text-text-secondary">
-                            <span>{item.component.name} ({item.component.sku})</span>
-                            <span className="font-semibold text-brand-primary">
-                              {Number(item.quantity)} {item.unitOfMeasure}
-                            </span>
+                  return (
+                    <React.Fragment key={bom.id}>
+                      <tr
+                        className="cursor-pointer hover:bg-surface-hover/10"
+                        onClick={() => toggleRow(bom.id)}
+                      >
+                        <td className="text-center">
+                          <button className="text-text-muted hover:text-[#4B164C]">
+                            {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                          </button>
+                        </td>
+                        <td>
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-text-primary text-xs">{bom.product.name}</span>
+                            <span className="font-mono text-[10px] text-[#4B164C] mt-0.5">{bom.product.sku}</span>
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
+                        </td>
+                        <td className="font-semibold text-text-primary text-xs">{bom.name}</td>
+                        <td className="text-right font-medium text-xs">
+                          {Number(bom.quantity)} <span className="text-[10px] text-text-muted">{bom.product.unitOfMeasure}</span>
+                        </td>
+                        <td className="text-right font-bold text-xs text-emerald-600">
+                          ₹{Number(totalCost).toLocaleString('en-IN')}
+                        </td>
+                        <td className="text-right text-xs font-semibold text-text-secondary">
+                          {materialCount} items
+                        </td>
+                        <td>
+                          <Badge variant={bom.isActive ? 'green' : 'gray'}>
+                            {bom.isActive ? 'Active' : 'Inactive'}
+                          </Badge>
+                        </td>
+                        <td className="text-xs text-text-muted">{format(new Date(bom.createdAt), 'MMM d, yyyy')}</td>
+                        {isPMOrAdmin && (
+                          <td onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-end pr-4">
+                              <Link
+                                href={`/bom/${bom.id}`}
+                                className="p-1.5 text-text-muted hover:text-brand-primary hover:bg-[#F8E7F6] rounded-lg transition-colors"
+                                title="View details"
+                              >
+                                <Edit2 size={14} />
+                              </Link>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                      
+                      {/* Expanded Section */}
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan={isPMOrAdmin ? 9 : 8} className="bg-slate-50/50 p-4 border-b border-surface-border">
+                            <div className="rounded-xl border border-surface-border bg-white p-4 space-y-3 animate-fade-in">
+                              <h4 className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Recipe Cost Breakdown</h4>
+                              
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-xs text-left">
+                                  <thead>
+                                    <tr className="border-b border-slate-100 text-text-muted">
+                                      <th className="py-2 font-semibold">SKU</th>
+                                      <th className="py-2 font-semibold">Component Name</th>
+                                      <th className="py-2 font-semibold text-right">Required Qty</th>
+                                      <th className="py-2 font-semibold text-right">Unit cost</th>
+                                      <th className="py-2 font-semibold text-right">Total cost</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100">
+                                    {bom.items.map((item: any) => {
+                                      const cost = Number(item.quantity) * Number(item.component.costPrice);
+                                      return (
+                                        <tr key={item.id}>
+                                          <td className="py-2 font-mono font-semibold text-brand-primary">{item.component.sku}</td>
+                                          <td className="py-2 text-text-primary">{item.component.name}</td>
+                                          <td className="py-2 text-right font-medium">
+                                            {Number(item.quantity)} <span className="text-[10px] text-text-muted">{item.unitOfMeasure}</span>
+                                          </td>
+                                          <td className="py-2 text-right text-text-muted">
+                                            ₹{Number(item.component.costPrice).toLocaleString('en-IN')}
+                                          </td>
+                                          <td className="py-2 text-right font-semibold text-text-primary">
+                                            ₹{Number(cost).toLocaleString('en-IN')}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                    {/* Cost Summary Row */}
+                                    <tr className="font-bold border-t border-slate-200 text-brand-primary">
+                                      <td colSpan={3} className="py-3 text-left">Total Raw Material Cost Estimation</td>
+                                      <td colSpan={2} className="py-3 text-right text-emerald-600 text-sm">
+                                        ₹{Number(totalCost).toLocaleString('en-IN')}
+                                      </td>
+                                    </tr>
+                                  </tbody>
+                                </table>
+                              </div>
 
-                  <div className="border-t border-surface-border/50 pt-3 flex justify-between items-center text-[10px] text-text-muted">
-                    <span>Created: {format(new Date(bom.createdAt), 'MMM d, yyyy')}</span>
-                    <Link href={`/bom/${bom.id}`} className="text-brand-highlight font-semibold hover:underline text-xs">
-                      View Details →
-                    </Link>
-                  </div>
-                </div>
-              ))}
-            </div>
+                              {bom.notes && (
+                                <div className="p-3 bg-slate-50 border border-slate-100 rounded-lg text-xs mt-2">
+                                  <span className="font-bold text-text-primary block mb-0.5">Recipe Execution Notes:</span>
+                                  <span className="text-text-secondary">{bom.notes}</span>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
           )}
         </div>
       </div>

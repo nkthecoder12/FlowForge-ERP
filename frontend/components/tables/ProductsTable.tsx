@@ -3,7 +3,7 @@
 import React from 'react';
 import Badge from '../ui/Badge';
 import Link from 'next/link';
-import { Edit, Trash2 } from 'lucide-react';
+import { Edit2, Trash2 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 
 interface ProductsTableProps {
@@ -16,87 +16,89 @@ export default function ProductsTable({ products, onDelete }: ProductsTableProps
   const isAdminOrPM = user?.role === 'admin' || user?.role === 'product_manager';
 
   return (
-    <table className="erp-table">
-      <thead>
-        <tr>
-          <th>SKU</th>
-          <th>Name</th>
-          <th>Type</th>
-          <th>Selling Price</th>
-          <th>Cost Price</th>
-          <th>On Hand</th>
-          <th>Reserved</th>
-          <th>Free Stock</th>
-          <th>Min Level</th>
-          {isAdminOrPM && <th className="text-right">Actions</th>}
-        </tr>
-      </thead>
-      <tbody>
-        {products.map((product) => {
-          const onHand = Number(product.onHandQuantity);
-          const reserved = Number(product.reservedQuantity);
-          const free = onHand - reserved;
-          const min = Number(product.minStockLevel);
-          const isLowStock = free <= min;
+    <div className="overflow-x-auto">
+      <table className="erp-table">
+        <thead>
+          <tr>
+            <th>SKU</th>
+            <th>Product Details</th>
+            <th>Type</th>
+            <th>Cost Basis</th>
+            <th>Selling Price</th>
+            <th className="text-right">On Hand</th>
+            <th className="text-right">Reserved</th>
+            <th className="text-right">Available Free</th>
+            <th className="text-right">Min Level</th>
+            {isAdminOrPM && <th className="text-right pr-6">Actions</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {products.map((product) => {
+            const onHand = Number(product.onHandQuantity);
+            const reserved = Number(product.reservedQuantity);
+            const free = onHand - reserved;
+            const min = Number(product.minStockLevel);
+            const isLowStock = free <= min;
 
-          return (
-            <tr key={product.id}>
-              <td className="font-mono text-xs font-semibold">{product.sku}</td>
-              <td className="font-medium text-text-primary">
-                <div>
-                  {product.name}
-                  {product.category && (
-                    <span className="text-[10px] bg-surface-hover px-1.5 py-0.5 rounded ml-2 text-text-secondary">
-                      {product.category}
-                    </span>
-                  )}
-                </div>
-              </td>
-              <td>
-                <Badge variant={product.procurementType === 'manufacture' ? 'purple' : 'blue'}>
-                  {product.procurementType === 'manufacture' ? 'Finished Good' : 'Raw Material'}
-                </Badge>
-              </td>
-              <td>INR {Number(product.salesPrice).toLocaleString()}</td>
-              <td>INR {Number(product.costPrice).toLocaleString()}</td>
-              <td className="font-semibold">{onHand}</td>
-              <td className="text-text-muted">{reserved}</td>
-              <td>
-                <span className={`font-bold ${isLowStock ? 'text-rose-500' : 'text-emerald-500'}`}>
-                  {free}
-                </span>
-              </td>
-              <td className="text-text-muted">{min}</td>
-              {isAdminOrPM && (
+            return (
+              <tr key={product.id}>
+                <td className="font-mono text-xs font-semibold text-[#4B164C]">{product.sku}</td>
                 <td>
-                  <div className="flex items-center justify-end gap-2">
-                    <Link
-                      href={`/products/${product.id}`}
-                      className="p-1.5 text-slate-400 hover:text-brand-primary hover:bg-surface-hover rounded transition-colors"
-                      title="Edit"
-                    >
-                      <Edit size={16} />
-                    </Link>
-                    {user?.role === 'admin' && (
-                      <button
-                        onClick={() => {
-                          if (window.confirm(`Are you sure you want to delete ${product.name}?`)) {
-                            onDelete(product.id);
-                          }
-                        }}
-                        className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-400/10 rounded transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                  <div className="flex flex-col">
+                    <span className="font-semibold text-text-primary text-xs">{product.name}</span>
+                    {product.category && (
+                      <span className="text-[10px] text-text-muted mt-0.5">
+                        Category: {product.category}
+                      </span>
                     )}
                   </div>
                 </td>
-              )}
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+                <td>
+                  <Badge variant={product.procurementType === 'manufacture' ? 'purple' : 'blue'}>
+                    {product.procurementType === 'manufacture' ? 'Finished Assembly' : 'Raw Material'}
+                  </Badge>
+                </td>
+                <td className="font-medium text-xs">₹{Number(product.costPrice).toLocaleString('en-IN')}</td>
+                <td className="font-medium text-xs">₹{Number(product.salesPrice).toLocaleString('en-IN')}</td>
+                <td className="text-right font-medium text-xs">{onHand}</td>
+                <td className="text-right text-text-muted text-xs">{reserved}</td>
+                <td className="text-right">
+                  <span className={`font-bold text-xs ${isLowStock ? 'text-rose-500' : 'text-emerald-500'}`}>
+                    {free}
+                  </span>
+                </td>
+                <td className="text-right text-text-muted text-xs">{min}</td>
+                {isAdminOrPM && (
+                  <td>
+                    <div className="flex items-center justify-end gap-2 pr-4">
+                      <Link
+                        href={`/products/${product.id}`}
+                        className="p-1.5 text-text-muted hover:text-brand-primary hover:bg-[#F8E7F6] rounded-lg transition-colors"
+                        title="Edit Product Details"
+                      >
+                        <Edit2 size={14} />
+                      </Link>
+                      {user?.role === 'admin' && (
+                        <button
+                          onClick={() => {
+                            if (window.confirm(`Are you sure you want to delete ${product.name}?`)) {
+                              onDelete(product.id);
+                            }
+                          }}
+                          className="p-1.5 text-text-muted hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                          title="Delete Product"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                )}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }

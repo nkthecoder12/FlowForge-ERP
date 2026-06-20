@@ -54,6 +54,11 @@ export const salesApi = {
     return res.data.data;
   },
 
+  deliver: async (id: string): Promise<ApiSalesOrder> => {
+    const res = await api.post(`/sales/${id}/deliver`);
+    return res.data.data;
+  },
+
   cancel: async (id: string): Promise<ApiSalesOrder> => {
     const res = await api.post(`/sales/${id}/cancel`);
     return res.data.data;

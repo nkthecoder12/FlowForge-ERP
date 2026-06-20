@@ -10,31 +10,31 @@ const config: Config = {
     extend: {
       colors: {
         brand: {
-          highlight: '#2563eb',
-          primary: '#1e293b',
-          hover: '#0f172a',
-          accent: '#3b82f6',
+          highlight: '#4B164C',
+          primary: '#4B164C',
+          hover: '#381039',
+          accent: '#DD88CF',
         },
         surface: {
-          DEFAULT: '#f1f5f9',
+          DEFAULT: '#F5F5F5',
           card: '#ffffff',
-          border: '#cbd5e1',
-          hover: '#e2e8f0',
+          border: '#e2e8f0',
+          hover: '#F8E7F6',
           input: '#ffffff',
-          sidebar: '#1e293b',
+          sidebar: '#4B164C',
         },
         text: {
-          primary: '#0f172a',
-          secondary: '#475569',
-          muted: '#94a3b8',
-          inverse: '#f8fafc',
+          primary: '#1e1b1e',
+          secondary: '#5c545b',
+          muted: '#a396a1',
+          inverse: '#fdfbfe',
         },
         accent: {
-          blue: '#2563eb',
-          cyan: '#0891b2',
-          emerald: '#059669',
-          amber: '#d97706',
-          rose: '#dc2626',
+          plum: '#4B164C',
+          rose: '#DD88CF',
+          emerald: '#10B981',
+          amber: '#F59E0B',
+          danger: '#EF4444',
         },
       },
       fontFamily: {
@@ -42,7 +42,7 @@ const config: Config = {
         mono: ['JetBrains Mono', 'monospace'],
       },
       backgroundImage: {
-        'gradient-brand': 'linear-gradient(135deg, #1e40af 0%, #1e293b 100%)',
+        'gradient-brand': 'linear-gradient(135deg, #4B164C 0%, #381039 100%)',
       },
       boxShadow: {
         'glow-brand': '0 0 20px rgba(37, 99, 235, 0.25)',

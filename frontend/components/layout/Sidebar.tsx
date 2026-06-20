@@ -16,83 +16,122 @@ import {
   BookOpen,
 } from 'lucide-react';
 
-const MENU_ITEMS = [
-  { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'product_manager', 'sales', 'inventory'] },
-  { name: 'Products', path: '/products', icon: Package, roles: ['admin', 'product_manager', 'sales', 'inventory'] },
-  { name: 'Bill of Materials', path: '/bom', icon: ClipboardList, roles: ['admin', 'product_manager'] },
-  { name: 'Inventory', path: '/inventory', icon: Warehouse, roles: ['admin', 'inventory'] },
-  { name: 'Stock Ledger', path: '/inventory/ledger', icon: BookOpen, roles: ['admin', 'inventory'] },
-  { name: 'Sales Orders', path: '/sales', icon: ShoppingCart, roles: ['admin', 'sales'] },
-  { name: 'Users', path: '/users', icon: Users, roles: ['admin'] },
-  { name: 'Audit Logs', path: '/audit', icon: ShieldAlert, roles: ['admin'] },
+const SECTIONS = [
+  {
+    title: 'Core Operations',
+    items: [
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'product_manager', 'sales', 'inventory'] },
+      { name: 'Products', path: '/products', icon: Package, roles: ['admin', 'product_manager', 'sales', 'inventory'] },
+      { name: 'Sales Orders', path: '/sales', icon: ShoppingCart, roles: ['admin', 'sales'] },
+    ]
+  },
+  {
+    title: 'Supply Chain',
+    items: [
+      { name: 'Inventory', path: '/inventory', icon: Warehouse, roles: ['admin', 'inventory'] },
+      { name: 'Stock Ledger', path: '/inventory/ledger', icon: BookOpen, roles: ['admin', 'inventory'] },
+      { name: 'Bill of Materials', path: '/bom', icon: ClipboardList, roles: ['admin', 'product_manager'] },
+    ]
+  },
+  {
+    title: 'System',
+    items: [
+      { name: 'Users', path: '/users', icon: Users, roles: ['admin'] },
+      { name: 'Audit Logs', path: '/audit', icon: ShieldAlert, roles: ['admin'] },
+    ]
+  }
 ];
 
 export default function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean; setIsOpen: (val: boolean) => void }) {
   const pathname = usePathname();
   const { user } = useAuth();
   const userRole = user?.role || 'sales';
-  const visibleItems = MENU_ITEMS.filter((item) => item.roles.includes(userRole));
+
+  // Filter sections and items based on role
+  const visibleSections = SECTIONS.map(section => {
+    const visibleItems = section.items.filter(item => item.roles.includes(userRole));
+    return { ...section, items: visibleItems };
+  }).filter(section => section.items.length > 0);
 
   return (
     <aside
-      className={`${isOpen ? 'w-60' : 'w-[68px]'} bg-surface-sidebar text-text-inverse transition-all duration-200 relative flex flex-col z-20 shrink-0`}
+      className={`${isOpen ? 'w-[260px]' : 'w-[72px]'} bg-brand-primary text-text-inverse transition-all duration-300 relative flex flex-col z-20 shrink-0 border-r border-white/5`}
     >
-      <div className="h-14 flex items-center border-b border-white/10 px-4 relative">
-        <div className={`flex items-center gap-2.5 w-full ${!isOpen && 'justify-center'}`}>
-          <div className="w-8 h-8 rounded bg-brand-highlight flex items-center justify-center shrink-0">
-            <span className="text-white font-bold text-xs">SF</span>
+      {/* Brand header */}
+      <div className="h-16 flex items-center justify-between px-4 border-b border-white/5 relative">
+        <div className={`flex items-center gap-3 w-full ${!isOpen && 'justify-center'}`}>
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-tr from-brand-accent to-white flex items-center justify-center shrink-0 shadow-md">
+            <span className="text-brand-primary font-bold text-sm">FF</span>
           </div>
           {isOpen && (
-            <div className="overflow-hidden">
-              <p className="font-bold text-sm text-white leading-tight truncate">Shiv Furniture</p>
-              <p className="text-[10px] text-slate-400 truncate">Works ERP</p>
+            <div className="overflow-hidden animate-fade-in">
+              <p className="font-bold text-sm text-white leading-tight tracking-wide truncate">FlowForge</p>
+              <p className="text-[10px] text-slate-300 truncate">Enterprise ERP</p>
             </div>
           )}
         </div>
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className="absolute -right-3 top-4 bg-white border border-surface-border rounded-full p-0.5 text-text-muted hover:text-brand-primary shadow-sm z-30"
+          className="absolute -right-3 top-5 bg-white border border-surface-border rounded-full p-1 text-brand-primary hover:text-brand-hover shadow-md z-30 transition-transform duration-200 hover:scale-105"
         >
-          {isOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
+          {isOpen ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
         </button>
       </div>
 
-      <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
-        {isOpen && (
-          <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2 px-3">
-            Modules
+      {/* Navigation */}
+      <nav className="flex-1 py-4 px-3 space-y-4 overflow-y-auto">
+        {visibleSections.map((section, sIdx) => (
+          <div key={sIdx} className="space-y-1">
+            {isOpen ? (
+              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 px-3">
+                {section.title}
+              </div>
+            ) : (
+              <div className="h-px bg-white/10 my-2 mx-1" />
+            )}
+            <div className="space-y-0.5">
+              {section.items.map((item) => {
+                const isActive = pathname.startsWith(item.path);
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.path}
+                    href={item.path}
+                    className={`flex items-center px-3 py-2.5 rounded-lg transition-all text-sm relative group ${
+                      isActive
+                        ? 'bg-white/10 text-white font-medium'
+                        : 'text-slate-300 hover:bg-white/5 hover:text-white'
+                    }`}
+                    title={!isOpen ? item.name : undefined}
+                  >
+                    {isActive && (
+                      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-brand-accent rounded-r" />
+                    )}
+                    <Icon
+                      size={18}
+                      className={`shrink-0 transition-colors ${
+                        isActive ? 'text-brand-accent' : 'text-slate-400 group-hover:text-slate-200'
+                      }`}
+                    />
+                    {isOpen && <span className="ml-3 truncate">{item.name}</span>}
+                  </Link>
+                );
+              })}
+            </div>
           </div>
-        )}
-        {visibleItems.map((item) => {
-          const isActive = pathname.startsWith(item.path);
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.path}
-              href={item.path}
-              className={`flex items-center px-3 py-2 rounded-md transition-colors text-sm ${
-                isActive
-                  ? 'bg-brand-highlight text-white font-medium'
-                  : 'text-slate-300 hover:bg-white/10 hover:text-white'
-              }`}
-              title={!isOpen ? item.name : undefined}
-            >
-              <Icon size={18} className="shrink-0" />
-              {isOpen && <span className="ml-3 truncate">{item.name}</span>}
-            </Link>
-          );
-        })}
+        ))}
       </nav>
 
-      <div className="p-3 border-t border-white/10">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center shrink-0 text-xs font-medium text-white">
+      {/* Footer User Info */}
+      <div className="p-4 border-t border-white/5 bg-brand-hover/40">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-brand-accent to-slate-200 flex items-center justify-center shrink-0 text-sm font-bold text-brand-primary shadow-sm">
             {user?.name?.charAt(0).toUpperCase() || 'U'}
           </div>
           {isOpen && (
-            <div className="overflow-hidden min-w-0">
-              <p className="text-sm font-medium text-white truncate">{user?.name}</p>
-              <p className="text-[10px] text-slate-400 truncate capitalize">{user?.role?.replace('_', ' ')}</p>
+            <div className="overflow-hidden min-w-0 animate-fade-in">
+              <p className="text-sm font-semibold text-white truncate">{user?.name}</p>
+              <p className="text-[11px] text-slate-300 truncate capitalize">{user?.role?.replace('_', ' ')}</p>
             </div>
           )}
         </div>
