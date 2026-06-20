@@ -40,6 +40,11 @@ export const bomsApi = {
     return res.data.data;
   },
 
+  update: async (id: string, payload: any): Promise<ApiBom> => {
+    const res = await api.put(`/boms/${id}`, payload);
+    return res.data.data;
+  },
+
   explode: async (productId: string, quantity: number): Promise<{
     hasBom: boolean;
     bomName?: string;

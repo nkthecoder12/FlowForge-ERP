@@ -148,6 +148,85 @@ export class BomsService {
       materials,
     };
   }
+
+  async update(
+    id: string,
+    dto: CreateBomInput,
+    actorId: string,
+    actorName: string,
+    actorRole: UserRole,
+  ) {
+    // Check if BOM exists
+    const existingBom = await prisma.bom.findUnique({ where: { id } });
+    if (!existingBom) {
+      throw Object.assign(new Error('BoM not found'), { statusCode: 404 });
+    }
+
+    // Check if finished product exists
+    const product = await prisma.product.findUnique({ where: { id: dto.productId } });
+    if (!product) {
+      throw Object.assign(new Error('Finished product not found'), { statusCode: 404 });
+    }
+
+    // Set other active BOMs for this product to inactive if this one is active
+    if (dto.isActive) {
+      await prisma.bom.updateMany({
+        where: { productId: dto.productId, isActive: true, NOT: { id } },
+        data: { isActive: false },
+      });
+    }
+
+    const bom = await prisma.$transaction(async (tx) => {
+      // 1. Update BOM header
+      const updatedBom = await tx.bom.update({
+        where: { id },
+        data: {
+          productId: dto.productId,
+          name: dto.name,
+          quantity: dto.quantity,
+          isActive: dto.isActive,
+          notes: dto.notes,
+        },
+      });
+
+      // 2. Delete all existing items
+      await tx.bomItem.deleteMany({
+        where: { bomId: id },
+      });
+
+      // 3. Re-create items
+      await Promise.all(
+        dto.items.map((item) =>
+          tx.bomItem.create({
+            data: {
+              bomId: id,
+              componentId: item.componentId,
+              quantity: item.quantity,
+              unitOfMeasure: item.unitOfMeasure,
+              notes: item.notes,
+            },
+          })
+        )
+      );
+
+      return updatedBom;
+    });
+
+    const fullBom = await this.getById(bom.id);
+
+    await createAuditLog({
+      userId: actorId,
+      userName: actorName,
+      userRole: actorRole,
+      action: 'bom_updated',
+      entityType: 'bom',
+      entityId: bom.id,
+      entityName: bom.name,
+      newValues: JSON.parse(JSON.stringify(fullBom)),
+    });
+
+    return fullBom;
+  }
 }
 
 export const bomsService = new BomsService();

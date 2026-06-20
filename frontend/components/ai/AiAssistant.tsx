@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { Sparkles, X, Lightbulb, AlertTriangle, ArrowRight, MessageSquare, Send } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
 
 interface AiAssistantProps {
   isOpen: boolean;
@@ -11,6 +12,7 @@ interface AiAssistantProps {
 
 export const AiAssistant: React.FC<AiAssistantProps> = ({ isOpen, onClose }) => {
   const pathname = usePathname();
+  const { user } = useAuth();
   const [query, setQuery] = useState('');
   const [messages, setMessages] = useState<Array<{ sender: 'user' | 'ai'; text: string }>>([]);
   const [isTyping, setIsTyping] = useState(false);
@@ -108,7 +110,7 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({ isOpen, onClose }) => 
 
   const insights = getContextInsights();
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!query.trim()) return;
 
@@ -117,40 +119,35 @@ export const AiAssistant: React.FC<AiAssistantProps> = ({ isOpen, onClose }) => 
     setQuery('');
     setIsTyping(true);
 
-    // Dynamic AI response based on real-time data
-    setTimeout(() => {
-      const data = insightsData;
-      let reply = '';
-      if (!data) {
-        reply = 'I am currently loading your real-time ERP data. Please try again in a moment.';
-      } else {
-        const queryLower = userMsg.toLowerCase();
-        if (queryLower.includes('stock') || queryLower.includes('inventory') || queryLower.includes('material') || queryLower.includes('shortage')) {
-          const items = data.procurementInsights;
-          const listStr = items.map((p: any) => `${p.name} (SKU: ${p.sku}): ${p.currentStock} on hand, consumes ${p.consumption}/day. Stockout in ${p.daysRemaining} days. Suggested order: ${p.suggestedOrder} from ${p.preferredVendor}.`).join('\n\n');
-          reply = `Here is our real-time stock alert report:\n\n${listStr || 'No critical shortages detected.'}`;
-        } else if (queryLower.includes('risk') || queryLower.includes('alert') || queryLower.includes('delay')) {
-          const risks = data.criticalRisks;
-          const listStr = risks.map((r: any) => `⚠️ [${r.severity} Severity] ${r.risk}: ${r.reason}`).join('\n\n');
-          reply = `Here are the operational risks detected in our database:\n\n${listStr || 'All systems nominal.'}`;
-        } else if (queryLower.includes('action') || queryLower.includes('recommend') || queryLower.includes('what should i do')) {
-          const recs = data.recommendations;
-          const listStr = recs.map((r: any) => `👉 Action: ${r.action}. Impact: ${r.impact}. Reason: ${r.reason}`).join('\n\n');
-          reply = `Here are the actions I suggest you take based on our live metrics:\n\n${listStr}`;
-        } else if (queryLower.includes('health') || queryLower.includes('score')) {
-          reply = `Our current Operational Health Score is ${data.operationalHealthScore}/100.
-Breakdown:
-- Inventory: ${data.operationalHealthBreakdown?.inventory}/100
-- Manufacturing: ${data.operationalHealthBreakdown?.manufacturing}/100
-- Procurement: ${data.operationalHealthBreakdown?.procurement}/100
-- Sales: ${data.operationalHealthBreakdown?.sales}/100`;
-        } else {
-          reply = `Based on your current workspace context (${pathname}), here is the executive digest:\n\n${data.executiveSummary}`;
-        }
+    try {
+      const apiBase = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://localhost:8000';
+      const userRole = user?.role || 'sales';
+      const response = await fetch(`${apiBase}/api/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          question: userMsg,
+          role: userRole,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to get response from AI Copilot');
       }
-      setMessages(prev => [...prev, { sender: 'ai', text: reply }]);
+
+      const resData = await response.json();
+      setMessages(prev => [...prev, { sender: 'ai', text: resData.answer }]);
+    } catch (err: any) {
+      console.error('Error sending chat message:', err);
+      setMessages(prev => [
+        ...prev,
+        { sender: 'ai', text: 'Sorry, I encountered an error connecting to the AI Copilot. Please make sure the FastAPI server is running.' },
+      ]);
+    } finally {
       setIsTyping(false);
-    }, 1200);
+    }
   };
 
   return (

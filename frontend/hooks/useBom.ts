@@ -31,6 +31,18 @@ export const useBom = () => {
     },
   });
 
+  const updateMutation = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: any }) => bomsApi.update(id, payload),
+    onSuccess: () => {
+      toast.success('BOM updated successfully!');
+      queryClient.invalidateQueries({ queryKey: ['boms'] });
+      queryClient.invalidateQueries({ queryKey: ['bom'] });
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to update BOM');
+    },
+  });
+
   const useExplode = (productId: string, quantity: number) => {
     return useQuery({
       queryKey: ['bom-explode', productId, quantity],
@@ -44,6 +56,8 @@ export const useBom = () => {
     useGet,
     create: createMutation.mutateAsync,
     isCreating: createMutation.isPending,
+    update: updateMutation.mutateAsync,
+    isUpdating: updateMutation.isPending,
     useExplode,
   };
 };

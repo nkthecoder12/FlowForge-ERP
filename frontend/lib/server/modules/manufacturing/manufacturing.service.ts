@@ -81,11 +81,16 @@ export class ManufacturingService {
       const ordersToCreate: any[] = [];
       
       for (const item of salesOrder.items) {
-        const onHand = Number(item.product.onHandQuantity);
-        const reserved = Number(item.product.reservedQuantity);
-        const free = Math.max(0, onHand - reserved);
+        const reservationMvs = await tx.inventoryMovement.findMany({
+          where: {
+            referenceSoId: salesOrderId,
+            productId: item.productId,
+            movementType: 'stock_reservation',
+          },
+        });
+        const reservedForThisSo = reservationMvs.reduce((sum, mv) => sum + Number(mv.quantity), 0);
         const ordered = Number(item.quantityOrdered);
-        const shortage = ordered - free;
+        const shortage = Math.max(0, ordered - reservedForThisSo);
 
         if (shortage > 0) {
           const activeBom = await tx.bom.findFirst({

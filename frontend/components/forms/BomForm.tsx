@@ -12,9 +12,14 @@ import { Plus, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import React, { useEffect } from 'react';
 
-export default function BomForm() {
+interface BomFormProps {
+  bom?: any;
+}
+
+export default function BomForm({ bom }: BomFormProps) {
   const router = useRouter();
-  const { create, isCreating } = useBom();
+  const { create, update, isCreating, isUpdating } = useBom();
+  const isEditing = !!bom;
   
   // Load products list for dropdowns
   const { useList: useProductsList } = useProducts({ limit: 100 });
@@ -28,6 +33,7 @@ export default function BomForm() {
     control,
     handleSubmit,
     setValue,
+    reset,
     formState: { errors },
   } = useForm<CreateBomInput>({
     resolver: zodResolver(createBomSchema),
@@ -40,6 +46,24 @@ export default function BomForm() {
       items: [{ componentId: '', quantity: 1, unitOfMeasure: 'pcs', notes: '' }],
     },
   });
+
+  useEffect(() => {
+    if (bom) {
+      reset({
+        productId: bom.productId,
+        name: bom.name,
+        quantity: Number(bom.quantity),
+        notes: bom.notes || '',
+        isActive: bom.isActive,
+        items: bom.items.map((item: any) => ({
+          componentId: item.componentId,
+          quantity: Number(item.quantity),
+          unitOfMeasure: item.unitOfMeasure,
+          notes: item.notes || '',
+        })),
+      });
+    }
+  }, [bom, reset]);
 
   const { fields, append, remove } = useFieldArray({
     control,
@@ -64,7 +88,11 @@ export default function BomForm() {
 
   const onSubmit = async (data: CreateBomInput) => {
     try {
-      await create(data);
+      if (isEditing) {
+        await update({ id: bom.id, payload: data });
+      } else {
+        await create(data);
+      }
       router.push('/bom');
     } catch {
       // hook handles toast
@@ -87,14 +115,14 @@ export default function BomForm() {
           ]}
           onChange={handleProductChange}
           error={errors.productId?.message}
-          disabled={isCreating}
+          disabled={isCreating || isUpdating || isEditing}
         />
         <Input
           {...register('name')}
           label="Recipe Name"
           placeholder="e.g. Standard Wooden Dining Table BoM"
           error={errors.name?.message}
-          disabled={isCreating}
+          disabled={isCreating || isUpdating}
         />
       </div>
 
@@ -104,14 +132,14 @@ export default function BomForm() {
           type="number"
           label="Yield Quantity (Output Yield)"
           error={errors.quantity?.message}
-          disabled={isCreating}
+          disabled={isCreating || isUpdating}
         />
         <Input
           {...register('notes')}
           label="Notes"
           placeholder="e.g. Assembly instructions..."
           error={errors.notes?.message}
-          disabled={isCreating}
+          disabled={isCreating || isUpdating}
         />
       </div>
 
@@ -123,7 +151,7 @@ export default function BomForm() {
             variant="secondary"
             className="h-9 px-3 py-1.5 text-xs rounded-lg"
             onClick={() => append({ componentId: '', quantity: 1, unitOfMeasure: 'pcs', notes: '' })}
-            disabled={isCreating}
+            disabled={isCreating || isUpdating}
           >
             <Plus size={14} /> Add Component
           </Button>
@@ -146,7 +174,7 @@ export default function BomForm() {
                   ]}
                   onChange={(e) => handleComponentChange(index, e)}
                   error={errors.items?.[index]?.componentId?.message}
-                  disabled={isCreating}
+                  disabled={isCreating || isUpdating}
                 />
               </div>
               <div className="md:col-span-2">
@@ -156,7 +184,7 @@ export default function BomForm() {
                   step="any"
                   label={index === 0 ? "Quantity" : undefined}
                   error={errors.items?.[index]?.quantity?.message}
-                  disabled={isCreating}
+                  disabled={isCreating || isUpdating}
                 />
               </div>
               <div className="md:col-span-2">
@@ -164,7 +192,7 @@ export default function BomForm() {
                   {...register(`items.${index}.unitOfMeasure`)}
                   label={index === 0 ? "UOM" : undefined}
                   error={errors.items?.[index]?.unitOfMeasure?.message}
-                  disabled={isCreating}
+                  disabled={isCreating || isUpdating}
                   readOnly
                 />
               </div>
@@ -174,7 +202,7 @@ export default function BomForm() {
                   label={index === 0 ? "Notes" : undefined}
                   placeholder="Notes..."
                   error={errors.items?.[index]?.notes?.message}
-                  disabled={isCreating}
+                  disabled={isCreating || isUpdating}
                 />
               </div>
               <div className="md:col-span-1 text-right">
@@ -183,7 +211,7 @@ export default function BomForm() {
                   variant="danger"
                   className="p-3 w-10 h-10 rounded-xl"
                   onClick={() => remove(index)}
-                  disabled={fields.length === 1 || isCreating}
+                  disabled={fields.length === 1 || isCreating || isUpdating}
                 >
                   <Trash2 size={16} />
                 </Button>
@@ -198,15 +226,15 @@ export default function BomForm() {
           type="button"
           variant="secondary"
           onClick={() => router.push('/bom')}
-          disabled={isCreating}
+          disabled={isCreating || isUpdating}
         >
           Cancel
         </Button>
         <Button
           type="submit"
-          isLoading={isCreating}
+          isLoading={isCreating || isUpdating}
         >
-          Save BOM Recipe
+          {isEditing ? 'Save Changes' : 'Save BOM Recipe'}
         </Button>
       </div>
     </form>
