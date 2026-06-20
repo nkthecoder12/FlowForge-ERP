@@ -108,6 +108,14 @@ model User {
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
+  // Registration Fields
+  companyName  String?   @map("company_name") @db.VarChar(150)
+  phone        String?   @db.VarChar(50)
+  country      String?   @db.VarChar(100)
+  language     String?   @db.VarChar(50)
+  companySize  String?   @map("company_size") @db.VarChar(50)
+  primaryInterest String? @map("primary_interest") @db.VarChar(100)
+
   // Relations
   createdProducts      Product[]           @relation("ProductCreator")
   createdBoms          Bom[]               @relation("BomCreator")
