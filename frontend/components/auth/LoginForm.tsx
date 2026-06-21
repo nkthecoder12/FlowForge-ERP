@@ -160,7 +160,7 @@ export default function LoginForm() {
             onClick={() => login({ email: 'amit@shivfurniture.com', password: 'Admin@123' })}
             className="flex flex-col items-start p-2.5 rounded-lg border border-amber-200 bg-amber-50/30 hover:bg-amber-50 text-left transition-all duration-150 disabled:opacity-50"
           >
-            <span className="text-[10px] font-bold text-amber-700">Procurement Mgr</span>
+            <span className="text-[10px] font-bold text-amber-700">Procurement Manager</span>
             <span className="text-[9px] text-slate-400 truncate w-full">amit@shivfurniture.com</span>
           </button>
 
