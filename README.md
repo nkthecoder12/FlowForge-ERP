@@ -30,10 +30,7 @@ FlowForge ERP uses a **decoupled transaction and intelligence architecture**. Cr
 
 ```
 +-----------------------------------------------------------------------------------+
-|                               NEXT.JS WEB CLIENT                                  |
-|  - App Router Dashboard UI (React + Tailwind CSS)                                 |
-|  - Client State & Caching: TanStack Query v5                                      |
-|  - Floating AI Insights Copilot Interface                                         |
+|                               NEXT.JS WEB CLIENT        
 +────────────────────────────────────────┬──────────────────────────────────────────+
                                          │
                         (Secured JSON REST / Cookie Auth)
