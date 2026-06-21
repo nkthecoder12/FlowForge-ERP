@@ -7,7 +7,7 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 export async function GET(_request: Request, context: RouteContext) {
   return handleRoute(async () => {
-    const user = await requireRole('admin', 'sales');
+    const user = await requireRole('admin', 'sales', 'product_manager', 'purchase', 'inventory');
     if (isErrorResponse(user)) return user;
 
     const { id } = await context.params;

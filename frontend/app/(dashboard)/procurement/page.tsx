@@ -12,9 +12,10 @@ import { Button } from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
 import Alert from '@/components/ui/Alert';
 import Link from 'next/link';
+import { useVendors } from '@/hooks/useVendors';
 
 export default function ProcurementPage() {
-  const { useList, selectQuotation, confirm: confirmPO, receive: receivePO, isSelectingQuotation, isConfirming, isReceiving } = usePurchase();
+  const { useList, selectQuotation, sendRFQ, confirm: confirmPO, receive: receivePO, isSelectingQuotation, isConfirming, isReceiving, isSendingRFQ } = usePurchase();
   const { user } = useAuth();
   const userRole = user?.role || 'sales';
   const { data: orders, isLoading, isError } = useList();
@@ -26,13 +27,85 @@ export default function ProcurementPage() {
   // Modals state
   const [showQuoteModal, setShowQuoteModal] = useState(false);
   const [showReceiveModal, setShowReceiveModal] = useState(false);
+  const [showRfqModal, setShowRfqModal] = useState(false);
+  const [selectedRfqVendors, setSelectedRfqVendors] = useState<string[]>([]);
 
-  // Quote comparison mock choices
-  const mockVendors = [
-    { name: 'Global Timber Ltd', email: 'sales@globaltimber.com', phone: '+91 88888 77777', cost: 12000, days: 3, rating: 4.8 },
-    { name: 'Apex Fasteners Corp', email: 'info@apexfasteners.com', phone: '+91 77777 66666', cost: 9500, days: 1, rating: 4.9 },
-    { name: 'Rainbow Coatings', email: 'orders@rainbowcoatings.com', phone: '+91 66666 55555', cost: 8200, days: 5, rating: 4.5 },
-  ];
+  // Dynamic vendor registry fetch
+  const { useList: useVendorsList } = useVendors();
+  const { data: dbVendors } = useVendorsList();
+
+  const activePo = React.useMemo(() => {
+    return orders?.find(o => o.id === selectedPoId);
+  }, [orders, selectedPoId]);
+
+  const baseCost = React.useMemo(() => {
+    return activePo?.items?.reduce((sum: number, item: any) => {
+      return sum + (Number(item.quantityOrdered) * Number(item.unitCost));
+    }, 0) || 1000;
+  }, [activePo]);
+
+  const dynamicVendors = React.useMemo(() => {
+    if (!dbVendors || dbVendors.length === 0) {
+      return [
+        { name: 'Global Timber Ltd', email: 'sales@globaltimber.com', phone: '+91 88888 77777', cost: baseCost * 1.1, days: 3, rating: 4.8 },
+        { name: 'Apex Fasteners Corp', email: 'info@apexfasteners.com', phone: '+91 77777 66666', cost: baseCost * 0.95, days: 1, rating: 4.9 },
+        { name: 'Rainbow Coatings', email: 'orders@rainbowcoatings.com', phone: '+91 66666 55555', cost: baseCost * 0.85, days: 5, rating: 4.5 },
+      ];
+    }
+
+    return dbVendors.map((v) => {
+      const charSum = v.name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+      const factor = 0.85 + ((charSum % 30) / 100);
+      const days = 1 + (charSum % 6);
+      const rating = parseFloat((4.0 + ((charSum % 10) / 10)).toFixed(1));
+
+      return {
+        name: v.name,
+        email: v.email || `${v.name.toLowerCase().replace(/\s+/g, '')}@supplier.com`,
+        phone: v.phone || `+91 ${90000 + (charSum % 10000)} ${50000 + (charSum % 50000)}`,
+        cost: Math.round(baseCost * factor),
+        days,
+        rating,
+      };
+    });
+  }, [dbVendors, baseCost]);
+
+  const getRequestedVendorsForPo = (notes: string | null | undefined) => {
+    if (!notes) return [];
+    const match = notes.match(/RFQs dispatched to selected vendors:\s*([^\n\r]+)/);
+    if (match && match[1]) {
+      return match[1].split(',').map(name => name.trim());
+    }
+    return [];
+  };
+
+  const allowedVendors = React.useMemo(() => {
+    if (!activePo) return [];
+    const requested = getRequestedVendorsForPo(activePo.notes);
+    const filtered = dynamicVendors.filter(v => requested.includes(v.name));
+    return filtered.length > 0 ? filtered : dynamicVendors;
+  }, [activePo, dynamicVendors]);
+
+  const handleOpenRfqModal = (poId: string) => {
+    setSelectedPoId(poId);
+    setSelectedRfqVendors([]);
+    setShowRfqModal(true);
+  };
+
+  const handleVerifyAndSendRfq = async () => {
+    if (!selectedPoId || selectedRfqVendors.length === 0) return;
+    try {
+      await sendRFQ({
+        id: selectedPoId,
+        payload: { vendorNames: selectedRfqVendors }
+      });
+      setShowRfqModal(false);
+      setSelectedPoId(null);
+      setSelectedRfqVendors([]);
+    } catch {
+      // Handled by toast
+    }
+  };
 
   // Receipt verification parameters
   const [receiptResult, setReceiptResult] = useState<'approve' | 'reject'>('approve');
@@ -62,8 +135,8 @@ export default function ProcurementPage() {
   }
 
   // KPIs
-  const pendingRFQs = orders.filter(o => o.status === 'draft' && (!o.vendorName || o.vendorName.includes('Recommended Vendor')));
-  const pendingPOConfirmations = orders.filter(o => o.status === 'draft' && o.vendorName && !o.vendorName.includes('Recommended Vendor'));
+  const pendingRFQs = orders.filter(o => o.status === 'draft' && (o.vendorName === 'Recommended Vendor (Pending Quote)' || o.vendorName === 'RFQ Sent (Pending Bids)'));
+  const pendingPOConfirmations = orders.filter(o => o.status === 'draft' && o.vendorName && o.vendorName !== 'Recommended Vendor (Pending Quote)' && o.vendorName !== 'RFQ Sent (Pending Bids)');
   const inTransit = orders.filter(o => o.status === 'confirmed');
   const receivedCount = orders.filter(o => o.status === 'received');
 
@@ -72,7 +145,7 @@ export default function ProcurementPage() {
     setShowQuoteModal(true);
   };
 
-  const handleConfirmQuoteSelection = async (vendor: typeof mockVendors[0]) => {
+  const handleConfirmQuoteSelection = async (vendor: any) => {
     if (!selectedPoId) return;
     try {
       await selectQuotation({
@@ -210,7 +283,7 @@ export default function ProcurementPage() {
               <tbody className="divide-y divide-surface-border bg-surface-input">
                 {orders.map((po) => {
                   const isExpanded = expandedPoId === po.id;
-                  const isRecommendedVendor = !po.vendorName || po.vendorName.includes('Recommended Vendor');
+                  const isRecommendedVendor = po.vendorName === 'Recommended Vendor (Pending Quote)' || po.vendorName === 'RFQ Sent (Pending Bids)';
 
                   return (
                     <React.Fragment key={po.id}>
@@ -223,11 +296,19 @@ export default function ProcurementPage() {
                             {isExpanded ? 'Hide' : 'Items'}
                           </button>
                         </td>
-                        <td className="p-4 font-mono font-bold text-brand-primary">{po.orderNumber}</td>
+                        <td className="p-4">
+                          <span className="font-mono font-bold text-brand-primary block">{po.orderNumber}</span>
+                          <span className="text-[10px] text-text-muted block mt-0.5 max-w-[200px] truncate" title={po.items?.map((item: any) => `${item.product?.name} (${Number(item.quantityOrdered)} ${item.product?.unitOfMeasure || 'pcs'})`).join(', ')}>
+                            {po.items?.map((item: any) => `${item.product?.name} (${Number(item.quantityOrdered)} ${item.product?.unitOfMeasure || 'pcs'})`).join(', ')}
+                          </span>
+                        </td>
                         <td className="p-4 font-medium text-text-primary">
                           {po.vendorName}
-                          {isRecommendedVendor && (
+                          {po.vendorName === 'Recommended Vendor (Pending Quote)' && (
                             <span className="ml-2 bg-amber-500/10 text-amber-600 text-[9px] px-1.5 py-0.5 rounded font-bold uppercase">RFQ Open</span>
+                          )}
+                          {po.vendorName === 'RFQ Sent (Pending Bids)' && (
+                            <span className="ml-2 bg-purple-500/10 text-purple-600 text-[9px] px-1.5 py-0.5 rounded font-bold uppercase">RFQ Sent</span>
                           )}
                         </td>
                         <td className="p-4 text-right font-bold text-sm">
@@ -250,13 +331,29 @@ export default function ProcurementPage() {
                               po.status === 'received' ? 'green' : 'red'
                             }
                           >
-                            {po.status === 'draft' && !isRecommendedVendor ? 'PO AWAITING DISPATCH' : po.status.replace(/_/g, ' ').toUpperCase()}
+                            {po.status === 'draft'
+                              ? po.vendorName === 'Recommended Vendor (Pending Quote)'
+                                ? 'PENDING VERIFICATION'
+                                : po.vendorName === 'RFQ Sent (Pending Bids)'
+                                ? 'RFQ SENT'
+                                : 'PO AWAITING DISPATCH'
+                              : po.status.replace(/_/g, ' ').toUpperCase()}
                           </Badge>
                         </td>
                         <td className="p-4 text-right">
                           <div className="flex justify-end items-center gap-2">
-                            {/* RFQ Step */}
-                            {po.status === 'draft' && isRecommendedVendor && isProcurementTeam && (
+                            {/* RFQ Verification step */}
+                            {po.status === 'draft' && po.vendorName === 'Recommended Vendor (Pending Quote)' && isProcurementTeam && (
+                              <Button 
+                                className="bg-[#4B164C] hover:bg-[#4B164C]/95 border-0 text-white font-semibold py-1 px-3 h-8 flex items-center gap-1.5"
+                                onClick={() => handleOpenRfqModal(po.id)}
+                              >
+                                <CheckCircle2 size={12} /> Verify & Request Quotes
+                              </Button>
+                            )}
+
+                            {/* RFQ Compare Step */}
+                            {po.status === 'draft' && po.vendorName === 'RFQ Sent (Pending Bids)' && isProcurementTeam && (
                               <Button 
                                 className="bg-[#4B164C] hover:bg-[#4B164C]/95 border-0 text-white font-semibold py-1 px-3 h-8 flex items-center gap-1.5"
                                 onClick={() => handleSelectQuote(po.id)}
@@ -266,7 +363,7 @@ export default function ProcurementPage() {
                             )}
 
                             {/* PO Dispatch step */}
-                            {po.status === 'draft' && !isRecommendedVendor && isProcurementTeam && (
+                            {po.status === 'draft' && po.vendorName !== 'Recommended Vendor (Pending Quote)' && po.vendorName !== 'RFQ Sent (Pending Bids)' && isProcurementTeam && (
                               <Button 
                                 className="bg-purple-600 hover:bg-purple-700 border-0 text-white font-semibold py-1 px-3 h-8 flex items-center gap-1.5"
                                 onClick={() => handleConfirmPO(po.id)}
@@ -336,6 +433,32 @@ export default function ProcurementPage() {
                               <div className="text-xs p-3.5 bg-white border border-surface-border rounded-xl text-text-secondary leading-relaxed font-medium">
                                 <strong>Internal Logs:</strong> {po.notes || 'No supplementary procurement comments logged.'}
                               </div>
+
+                              {po.quotations && po.quotations.length > 0 && (
+                                <div className="border border-slate-200 rounded-lg overflow-hidden bg-white p-3.5 space-y-2">
+                                  <h5 className="font-bold text-xs text-[#4B164C] border-b border-slate-100 pb-1.5">
+                                    Supplier RFQ Quotation Bids History Log
+                                  </h5>
+                                  <div className="space-y-1.5 text-[11px] font-semibold text-text-secondary">
+                                    {po.quotations.map((q: any, idx: number) => (
+                                      <div key={idx} className="flex justify-between items-center p-2 rounded bg-slate-50 border border-slate-100/50">
+                                        <div className="flex items-center gap-2">
+                                          <span className={`w-2 h-2 rounded-full ${q.status === 'selected' ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                                          <span className="font-bold text-text-primary">{q.vendorName}</span>
+                                          {q.rating && <span className="text-[10px] text-amber-500">★ {Number(q.rating)}</span>}
+                                        </div>
+                                        <div className="flex items-center gap-4 text-xs">
+                                          <span>Lead Time: <b>{q.deliveryDays} Days</b></span>
+                                          <span className="font-bold text-brand-primary">₹{Number(q.totalAmount).toLocaleString('en-IN')}</span>
+                                          <Badge variant={q.status === 'selected' ? 'green' : q.status === 'rejected' ? 'red' : 'gray'}>
+                                            {q.status.toUpperCase()}
+                                          </Badge>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -348,6 +471,76 @@ export default function ProcurementPage() {
           </div>
         )}
       </div>
+
+      {/* RFQ Verification Modal */}
+      {showRfqModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 animate-fade-in">
+          <div className="bg-white rounded-2xl border border-surface-border max-w-md w-full p-6 space-y-4 shadow-xl">
+            <div className="flex justify-between items-center border-b border-surface-border pb-3">
+              <h3 className="text-base font-bold text-[#4B164C] flex items-center gap-2">
+                <CheckCircle2 size={18} className="text-[#4B164C]" /> Verify Procurement & Send RFQs
+              </h3>
+              <button onClick={() => setShowRfqModal(false)} className="text-text-muted hover:text-text-primary">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <p className="text-xs text-text-secondary">
+                Verify the raw material shortage request and select supplier partners to send Request for Quotes (RFQs):
+              </p>
+
+              <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 space-y-1.5 text-xs text-text-secondary">
+                <p className="font-bold text-[#4B164C] uppercase text-[10px] tracking-wider mb-1">Items Requested:</p>
+                {activePo?.items?.map((item: any, idx: number) => (
+                  <div key={idx} className="flex justify-between font-semibold">
+                    <span>{item.product?.name} (SKU: {item.product?.sku})</span>
+                    <span className="font-bold text-text-primary">{Number(item.quantityOrdered)} {item.product?.unitOfMeasure || 'pcs'}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-2 max-h-48 overflow-y-auto border border-surface-border rounded-xl p-3 bg-slate-50/50">
+                {dbVendors && dbVendors.length > 0 ? (
+                  dbVendors.map((v) => (
+                    <label key={v.id} className="flex items-center gap-2.5 text-xs font-semibold text-text-primary cursor-pointer hover:bg-slate-100 p-2 rounded-lg transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={selectedRfqVendors.includes(v.name)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedRfqVendors([...selectedRfqVendors, v.name]);
+                          } else {
+                            setSelectedRfqVendors(selectedRfqVendors.filter(name => name !== v.name));
+                          }
+                        }}
+                        className="rounded border-slate-300 accent-brand-primary"
+                      />
+                      {v.name}
+                    </label>
+                  ))
+                ) : (
+                  <p className="text-xs text-text-muted italic p-2">No registered vendors available. Seeded defaults will be used.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-surface-border">
+              <Button variant="secondary" onClick={() => setShowRfqModal(false)}>
+                Cancel
+              </Button>
+              <Button
+                className="bg-[#4B164C] hover:bg-[#381039] text-white border-0"
+                onClick={handleVerifyAndSendRfq}
+                isLoading={isSendingRFQ}
+                disabled={selectedRfqVendors.length === 0}
+              >
+                Verify & Send RFQs
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Quote Comparison Modal */}
       {showQuoteModal && (
@@ -362,9 +555,19 @@ export default function ProcurementPage() {
 
             <div className="space-y-4">
               <p className="text-xs text-text-secondary">Compare cost price, delivery estimates, and historical vendor ratings for the required component checklist items:</p>
+
+              <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 space-y-1.5 text-xs text-text-secondary">
+                <p className="font-bold text-[#4B164C] uppercase text-[10px] tracking-wider mb-1">Items Requested:</p>
+                {activePo?.items?.map((item: any, idx: number) => (
+                  <div key={idx} className="flex justify-between font-semibold">
+                    <span>{item.product?.name} (SKU: {item.product?.sku})</span>
+                    <span className="font-bold text-text-primary">{Number(item.quantityOrdered)} {item.product?.unitOfMeasure || 'pcs'}</span>
+                  </div>
+                ))}
+              </div>
               
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {mockVendors.map((vendor) => (
+                {allowedVendors.map((vendor) => (
                   <div 
                     key={vendor.name} 
                     className="p-4 border border-brand-accent/20 rounded-xl bg-[#F8E7F6]/10 hover:border-brand-primary/40 transition-all flex flex-col justify-between space-y-3"
@@ -421,6 +624,58 @@ export default function ProcurementPage() {
 
             <div className="space-y-4">
               <p className="text-xs text-text-secondary">Verify the PO, invoice values, quantity ordered, and check for material quality issues:</p>
+
+              {/* Purchase Order & Invoice Display */}
+              <div className="grid grid-cols-1 gap-3">
+                {/* PO Details Panel */}
+                <div className="border border-surface-border rounded-xl p-3 bg-slate-50 space-y-1.5 text-xs text-text-secondary">
+                  <p className="font-bold text-[#4B164C] uppercase text-[10px] tracking-wider border-b border-slate-200/80 pb-1">PO Details ({activePo?.orderNumber})</p>
+                  <div className="space-y-1">
+                    {activePo?.items?.map((item: any, idx: number) => (
+                      <div key={idx} className="flex justify-between font-medium">
+                        <span>{item.product?.name} (SKU: {item.product?.sku})</span>
+                        <span className="font-bold text-text-primary">{Number(item.quantityOrdered)} {item.product?.unitOfMeasure || 'pcs'}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Invoice Panel */}
+                {activePo && (
+                  <div className="border border-dashed border-brand-accent/30 rounded-xl p-3.5 bg-brand-primary/[0.02] space-y-2">
+                    <div className="flex justify-between items-start border-b border-slate-200/80 pb-1.5">
+                      <div>
+                        <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Supplier Invoice</span>
+                        <p className="font-mono font-bold text-[#4B164C] text-xs mt-0.5">
+                          {activePo.invoices?.[0]?.invoiceNumber || 
+                            `INV-${new Date(activePo.createdAt).getFullYear()}-${Math.floor(100000 + (activePo.orderNumber.split('-')[1] ? parseInt(activePo.orderNumber.split('-')[1]) * 100 : 500000))}`}
+                        </p>
+                      </div>
+                      <Badge variant={(activePo.invoices?.[0]?.status || 'pending') === 'verified' ? 'green' : 'amber'}>
+                        {(activePo.invoices?.[0]?.status || 'pending') === 'verified' ? 'Verified' : 'Pending Review'}
+                      </Badge>
+                    </div>
+                    <div className="text-[11px] space-y-1 font-semibold text-text-secondary">
+                      <div className="flex justify-between">
+                        <span>Supplier Partner:</span>
+                        <span className="text-text-primary">{activePo.vendorName}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Invoice Total Amount:</span>
+                        <span className="text-[#4B164C] font-bold">₹{Number(activePo.invoices?.[0]?.amount || activePo.totalAmount).toLocaleString('en-IN')}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Date Issued:</span>
+                        <span>
+                          {activePo.invoices?.[0]?.createdAt 
+                            ? format(new Date(activePo.invoices[0].createdAt), 'dd MMM yyyy, hh:mm a')
+                            : format(new Date(activePo.createdAt), 'dd MMM yyyy, hh:mm a')}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
 
               <div className="flex gap-4 border border-surface-border rounded-xl p-3.5 bg-slate-50">
                 <label className="flex items-center gap-2 text-xs font-bold text-emerald-600 cursor-pointer">

@@ -9,9 +9,10 @@ import { useAuth } from '@/hooks/useAuth';
 interface ProductsTableProps {
   products: any[];
   onDelete: (id: string) => void;
+  onOrderRawMaterial?: (product: any) => void;
 }
 
-export default function ProductsTable({ products, onDelete }: ProductsTableProps) {
+export default function ProductsTable({ products, onDelete, onOrderRawMaterial }: ProductsTableProps) {
   const { user } = useAuth();
   const isAdminOrPM = user?.role === 'admin' || user?.role === 'product_manager';
 
@@ -71,6 +72,15 @@ export default function ProductsTable({ products, onDelete }: ProductsTableProps
                 {isAdminOrPM && (
                   <td>
                     <div className="flex items-center justify-end gap-2 pr-4">
+                      {product.procurementType === 'purchase' && onOrderRawMaterial && (
+                        <button
+                          onClick={() => onOrderRawMaterial(product)}
+                          className="px-2 py-1 text-[10px] font-bold bg-brand-primary hover:bg-brand-hover text-white rounded transition-colors mr-1"
+                          title="Order Raw Materials"
+                        >
+                          Order
+                        </button>
+                      )}
                       <Link
                         href={`/products/${product.id}`}
                         className="p-1.5 text-text-muted hover:text-brand-primary hover:bg-[#F8E7F6] rounded-lg transition-colors"

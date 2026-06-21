@@ -1,18 +1,37 @@
 'use client';
 
 import { useProducts } from '@/hooks/useProducts';
+import { useAuth } from '@/hooks/useAuth';
 import ProductsTable from '@/components/tables/ProductsTable';
 import { Plus, Search, Package, FileDown, Layers, Landmark, Info } from 'lucide-react';
 import Link from 'next/link';
 import React, { useState } from 'react';
 import EmptyState from '@/components/ui/EmptyState';
 import Skeleton from '@/components/ui/Skeleton';
+import { usePurchase } from '@/hooks/usePurchase';
+import Modal from '@/components/ui/Modal';
 
 export default function ProductsPage() {
   const [search, setSearch] = useState('');
   const [filterTab, setFilterTab] = useState<'all' | 'finished' | 'raw'>('all');
   const { useList, deleteProduct } = useProducts({ search });
   const { data, isLoading, isError } = useList();
+  const { user } = useAuth();
+  const userRole = user?.role || 'sales';
+
+  const { create, isCreating } = usePurchase();
+  const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<any>(null);
+  const [orderQuantity, setOrderQuantity] = useState<number>(1);
+
+  const handleOrderRawMaterial = (product: any) => {
+    setSelectedProduct(product);
+    const free = Number(product.onHandQuantity) - Number(product.reservedQuantity);
+    const min = Number(product.minStockLevel);
+    const recommended = min > free ? min - free : 1;
+    setOrderQuantity(recommended <= 0 ? 1 : recommended);
+    setIsOrderModalOpen(true);
+  };
 
   const handleDelete = async (id: string) => {
     await deleteProduct(id);
@@ -20,18 +39,23 @@ export default function ProductsPage() {
 
   const products = data?.products || [];
   
-  // Calculate summary counts from products list
-  const totalProductsCount = products.length;
-  const rawMaterialsCount = products.filter(p => p.procurementType === 'purchase').length;
-  const finishedGoodsCount = products.filter(p => p.procurementType === 'manufacture').length;
-  const lowStockCount = products.filter(p => {
+  // Filter out raw materials for sales role
+  const visibleProducts = userRole === 'sales'
+    ? products.filter(p => p.procurementType === 'manufacture')
+    : products;
+  
+  // Calculate summary counts from visible products list
+  const totalProductsCount = visibleProducts.length;
+  const rawMaterialsCount = visibleProducts.filter(p => p.procurementType === 'purchase').length;
+  const finishedGoodsCount = visibleProducts.filter(p => p.procurementType === 'manufacture').length;
+  const lowStockCount = visibleProducts.filter(p => {
     const free = Number(p.onHandQuantity) - Number(p.reservedQuantity);
     return free <= Number(p.minStockLevel);
   }).length;
-  const totalInventoryVal = products.reduce((acc, p) => acc + (Number(p.onHandQuantity) * Number(p.costPrice)), 0);
+  const totalInventoryVal = visibleProducts.reduce((acc, p) => acc + (Number(p.onHandQuantity) * Number(p.costPrice)), 0);
 
   // Apply tab filter on client side
-  const filteredProducts = products.filter(p => {
+  const filteredProducts = visibleProducts.filter(p => {
     if (filterTab === 'finished') return p.procurementType === 'manufacture';
     if (filterTab === 'raw') return p.procurementType === 'purchase';
     return true;
@@ -55,13 +79,13 @@ export default function ProductsPage() {
 
       {/* KPI Cards Header */}
       {isLoading ? (
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-          {[...Array(5)].map((_, i) => (
+        <div className={`grid grid-cols-2 ${userRole === 'sales' ? 'lg:grid-cols-4' : 'lg:grid-cols-5'} gap-4`}>
+          {[...Array(userRole === 'sales' ? 4 : 5)].map((_, i) => (
             <Skeleton key={i} className="h-20" />
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className={`grid grid-cols-2 ${userRole === 'sales' ? 'lg:grid-cols-4' : 'lg:grid-cols-5'} gap-4`}>
           <div className="bg-white border border-surface-border rounded-xl p-4 shadow-sm">
             <p className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Catalog Products</p>
             <p className="text-xl font-bold text-text-primary mt-1">{totalProductsCount}</p>
@@ -70,10 +94,12 @@ export default function ProductsPage() {
             <p className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Finished Goods</p>
             <p className="text-xl font-bold text-[#4B164C] mt-1">{finishedGoodsCount}</p>
           </div>
-          <div className="bg-white border border-surface-border rounded-xl p-4 shadow-sm">
-            <p className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Raw Materials</p>
-            <p className="text-xl font-bold text-blue-600 mt-1">{rawMaterialsCount}</p>
-          </div>
+          {userRole !== 'sales' && (
+            <div className="bg-white border border-surface-border rounded-xl p-4 shadow-sm">
+              <p className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Raw Materials</p>
+              <p className="text-xl font-bold text-blue-600 mt-1">{rawMaterialsCount}</p>
+            </div>
+          )}
           <div className="bg-white border border-surface-border rounded-xl p-4 shadow-sm">
             <p className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Low Stock Items</p>
             <p className={`text-xl font-bold mt-1 ${lowStockCount > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{lowStockCount}</p>
@@ -90,32 +116,38 @@ export default function ProductsPage() {
         {/* Toolbar & Filters */}
         <div className="p-4 border-b border-surface-border flex flex-col md:flex-row gap-4 items-center justify-between bg-slate-50/50">
           {/* Tabs */}
-          <div className="flex bg-slate-100 p-1 rounded-lg border border-surface-border text-xs shrink-0 self-stretch sm:self-start">
-            <button
-              onClick={() => setFilterTab('all')}
-              className={`px-3 py-1.5 rounded-md font-semibold transition-all ${
-                filterTab === 'all' ? 'bg-white text-brand-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              All Items
-            </button>
-            <button
-              onClick={() => setFilterTab('finished')}
-              className={`px-3 py-1.5 rounded-md font-semibold transition-all ${
-                filterTab === 'finished' ? 'bg-white text-brand-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              Finished Assemblies
-            </button>
-            <button
-              onClick={() => setFilterTab('raw')}
-              className={`px-3 py-1.5 rounded-md font-semibold transition-all ${
-                filterTab === 'raw' ? 'bg-white text-brand-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              Raw Materials
-            </button>
-          </div>
+          {userRole !== 'sales' ? (
+            <div className="flex bg-slate-100 p-1 rounded-lg border border-surface-border text-xs shrink-0 self-stretch sm:self-start">
+              <button
+                onClick={() => setFilterTab('all')}
+                className={`px-3 py-1.5 rounded-md font-semibold transition-all ${
+                  filterTab === 'all' ? 'bg-white text-brand-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                All Items
+              </button>
+              <button
+                onClick={() => setFilterTab('finished')}
+                className={`px-3 py-1.5 rounded-md font-semibold transition-all ${
+                  filterTab === 'finished' ? 'bg-white text-brand-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                Finished Assemblies
+              </button>
+              <button
+                onClick={() => setFilterTab('raw')}
+                className={`px-3 py-1.5 rounded-md font-semibold transition-all ${
+                  filterTab === 'raw' ? 'bg-white text-brand-primary shadow-sm' : 'text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                Raw Materials
+              </button>
+            </div>
+          ) : (
+            <div className="text-xs font-bold text-brand-primary uppercase tracking-wider pl-2">
+              Finished Assemblies Catalog
+            </div>
+          )}
 
           <div className="flex gap-3 w-full md:w-auto items-center">
             {/* Search */}
@@ -162,10 +194,97 @@ export default function ProductsPage() {
               />
             </div>
           ) : (
-            <ProductsTable products={filteredProducts} onDelete={handleDelete} />
+            <ProductsTable
+              products={filteredProducts}
+              onDelete={handleDelete}
+              onOrderRawMaterial={handleOrderRawMaterial}
+            />
           )}
         </div>
       </div>
+
+      {/* Manual Procurement Order Modal */}
+      {selectedProduct && (
+        <Modal
+          isOpen={isOrderModalOpen}
+          onClose={() => {
+            setIsOrderModalOpen(false);
+            setSelectedProduct(null);
+          }}
+          title="Raise Procurement Request"
+        >
+          <div className="space-y-4 text-text-primary text-xs">
+            <div className="bg-slate-50 p-3 rounded-lg border border-surface-border space-y-1">
+              <p className="font-semibold text-brand-primary">{selectedProduct.name}</p>
+              <p className="text-[10px] text-text-muted">SKU: {selectedProduct.sku}</p>
+              <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-slate-200">
+                <div>
+                  <span className="text-text-muted">Available Free:</span>{' '}
+                  <span className="font-bold text-slate-800">
+                    {Number(selectedProduct.onHandQuantity) - Number(selectedProduct.reservedQuantity)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-text-muted">Min Stock Level:</span>{' '}
+                  <span className="font-bold text-slate-800">{Number(selectedProduct.minStockLevel)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-text-secondary">
+                Order Quantity ({selectedProduct.unitOfMeasure || 'pcs'})
+              </label>
+              <input
+                type="number"
+                min="1"
+                step="any"
+                value={orderQuantity}
+                onChange={(e) => setOrderQuantity(Number(e.target.value))}
+                className="input-field w-full text-xs"
+                placeholder="Enter quantity to purchase"
+              />
+              <p className="text-[10px] text-text-muted">
+                Recommended minimum: {Math.max(1, Number(selectedProduct.minStockLevel) - (Number(selectedProduct.onHandQuantity) - Number(selectedProduct.reservedQuantity)))}
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t border-surface-border mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOrderModalOpen(false);
+                  setSelectedProduct(null);
+                }}
+                disabled={isCreating}
+                className="btn-ghost"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (orderQuantity <= 0) return;
+                  try {
+                    await create({
+                      productId: selectedProduct.id,
+                      quantity: orderQuantity,
+                    });
+                    setIsOrderModalOpen(false);
+                    setSelectedProduct(null);
+                  } catch (err) {
+                    // Toast error is handled in usePurchase hook
+                  }
+                }}
+                disabled={isCreating || orderQuantity <= 0}
+                className="btn-primary bg-brand-primary hover:bg-brand-hover text-white flex items-center justify-center gap-1.5"
+              >
+                {isCreating ? 'Creating...' : 'Confirm Order'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

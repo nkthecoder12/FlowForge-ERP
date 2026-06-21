@@ -12,5 +12,10 @@ export const receivePurchaseOrderSchema = z.object({
   reason: z.string().optional(),
 });
 
+export const sendRFQSchema = z.object({
+  vendorNames: z.array(z.string()).min(1, 'Select at least one vendor to send RFQ'),
+});
+
 export type SelectQuotationInput = z.infer<typeof selectQuotationSchema>;
 export type ReceivePurchaseOrderInput = z.infer<typeof receivePurchaseOrderSchema>;
+export type SendRFQInput = z.infer<typeof sendRFQSchema>;

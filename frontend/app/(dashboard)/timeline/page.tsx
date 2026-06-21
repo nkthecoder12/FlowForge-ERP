@@ -10,6 +10,17 @@ import Badge from '@/components/ui/Badge';
 import Alert from '@/components/ui/Alert';
 import Link from 'next/link';
 
+const safeFormatDate = (dateVal: any, formatStr = 'MMM d, yyyy HH:mm') => {
+  if (!dateVal) return '';
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return '';
+  try {
+    return format(d, formatStr);
+  } catch {
+    return '';
+  }
+};
+
 export default function BusinessTimelinePage() {
   const { useList } = useSales();
   const { data: orders, isLoading, isError } = useList();
@@ -78,12 +89,16 @@ export default function BusinessTimelinePage() {
     let pmStatus: 'checked' | 'pending' | 'failed' = 'pending';
     let pmDetails = 'Awaiting decision on production feasibility.';
     let pmTimestamp = undefined;
+    let pmLabel = 'PM Approved';
     if (hasMo) {
-      const isRejected = mos.some((m: any) => m.status === 'cancelled');
-      const isApproved = mos.some((m: any) => ['confirmed', 'in_progress', 'completed'].includes(m.status));
+      const isRejected = primaryMo.status === 'cancelled';
+      const isApproved = ['confirmed', 'in_progress', 'completed'].includes(primaryMo.status);
       if (isRejected) {
         pmStatus = 'failed';
-        pmDetails = 'Rejection reason: Capacity constraints or material missing.';
+        pmLabel = 'Rejected Criteria';
+        const rejectMatch = primaryMo.notes?.match(/Reason:\s*([^\n\r]+)/);
+        const reasonStr = rejectMatch ? rejectMatch[1] : 'Capacity constraints or material missing';
+        pmDetails = `Rejection reason: ${reasonStr}.`;
         pmTimestamp = primaryMo.updatedAt;
       } else if (isApproved) {
         pmStatus = 'checked';
@@ -92,7 +107,7 @@ export default function BusinessTimelinePage() {
       }
     }
     timelineItems.push({
-      label: 'PM Approved',
+      label: pmLabel,
       status: pmStatus,
       timestamp: pmTimestamp,
       owner: 'Ravi Sharma',
@@ -142,7 +157,12 @@ export default function BusinessTimelinePage() {
     if (pmStatus === 'checked') {
       procStatus = 'checked';
       if (hasPo) {
-        procDetails = `Draft RFQs generated: ${pos.map((p: any) => p.orderNumber).join(', ')}`;
+        const isVerified = pos.some((p: any) => p.vendorName !== 'Recommended Vendor (Pending Quote)');
+        if (isVerified) {
+          procDetails = `Procurement verified. RFQs sent: ${pos.map((p: any) => p.orderNumber).join(', ')}`;
+        } else {
+          procDetails = `Draft procurement raised: ${pos.map((p: any) => p.orderNumber).join(', ')} (Awaiting verification)`;
+        }
       } else {
         procDetails = 'Skipped: Sufficient raw materials available on hand.';
       }
@@ -164,6 +184,9 @@ export default function BusinessTimelinePage() {
       if (hasPo) {
         const allConfirmed = pos.every((p: any) => ['confirmed', 'received'].includes(p.status));
         const anyCancelled = pos.some((p: any) => p.status === 'cancelled');
+        const isVerified = pos.some((p: any) => p.vendorName !== 'Recommended Vendor (Pending Quote)');
+        const hasSelectedVendor = pos.some((p: any) => p.vendorName !== 'Recommended Vendor (Pending Quote)' && p.vendorName !== 'RFQ Sent (Pending Bids)');
+
         if (allConfirmed) {
           vendorStatus = 'checked';
           vendorDetails = `Vendor approved. Purchase orders dispatch locked.`;
@@ -172,9 +195,17 @@ export default function BusinessTimelinePage() {
           vendorStatus = 'failed';
           vendorDetails = 'Vendor quote selection failed or PO cancelled.';
           vendorTimestamp = primaryPo.updatedAt;
+        } else if (hasSelectedVendor) {
+          const selectedVendorName = pos.find((p: any) => p.vendorName !== 'Recommended Vendor (Pending Quote)' && p.vendorName !== 'RFQ Sent (Pending Bids)')?.vendorName || '';
+          vendorStatus = 'checked';
+          vendorDetails = `Vendor quote selected: ${selectedVendorName}. Awaiting PO dispatch.`;
+          vendorTimestamp = primaryPo.updatedAt;
+        } else if (isVerified) {
+          vendorStatus = 'pending';
+          vendorDetails = 'RFQ sent. Comparing vendor quotes.';
         } else {
           vendorStatus = 'pending';
-          vendorDetails = 'Comparing vendor cost and lead times.';
+          vendorDetails = 'Awaiting procurement manager verification & RFQ target selection.';
         }
       } else {
         vendorStatus = 'checked';
@@ -351,7 +382,7 @@ export default function BusinessTimelinePage() {
                       {ord.customerName}
                     </div>
                     <div className="flex justify-between w-full text-[10px] text-text-muted">
-                      <span>{format(new Date(ord.createdAt), 'MMM d, yyyy')}</span>
+                      <span>{safeFormatDate(ord.createdAt, 'MMM d, yyyy')}</span>
                       <span className="font-bold text-brand-primary">₹{Number(ord.totalAmount).toLocaleString('en-IN')}</span>
                     </div>
                   </button>
@@ -411,9 +442,9 @@ export default function BusinessTimelinePage() {
                           <span className={`font-bold text-sm ${isPending ? 'text-text-muted' : isFailed ? 'text-rose-500' : 'text-text-primary'}`}>
                             {step.label}
                           </span>
-                          {step.timestamp && (
+                          {step.timestamp && safeFormatDate(step.timestamp) && (
                             <span className="text-[10px] text-text-muted font-bold">
-                              {format(new Date(step.timestamp), 'MMM d, yyyy HH:mm')}
+                              {safeFormatDate(step.timestamp)}
                             </span>
                           )}
                         </div>

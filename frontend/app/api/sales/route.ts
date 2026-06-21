@@ -7,7 +7,7 @@ import type { UserRole } from '@prisma/client';
 
 export async function GET() {
   return handleRoute(async () => {
-    const user = await requireRole('admin', 'sales');
+    const user = await requireRole('admin', 'sales', 'product_manager', 'purchase', 'inventory');
     if (isErrorResponse(user)) return user;
 
     const orders = await salesService.list();

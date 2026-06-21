@@ -261,6 +261,22 @@ export class ManufacturingService {
       },
     });
 
+    if (existing.triggeredBySoId) {
+      const so = await prisma.salesOrder.findUnique({
+        where: { id: existing.triggeredBySoId },
+      });
+      if (so) {
+        const soNotes = so.notes || '';
+        const cleanNotes = soNotes.split('\n\n[Production Rejected]')[0];
+        await prisma.salesOrder.update({
+          where: { id: existing.triggeredBySoId },
+          data: {
+            notes: `${cleanNotes}\n\n[Production Rejected] Rejection reason: ${reason}`,
+          },
+        });
+      }
+    }
+
     await createAuditLog({
       userId: actorId,
       userName: actorName,
@@ -551,11 +567,6 @@ export class ManufacturingService {
 
     return mapMOStatus(updated);
   }
-}
-
-// Export placeholder function to prevent import compilation failure in purchase service
-export async function generatePurchaseOrderNumber(): Promise<string> {
-  return '';
 }
 
 export const manufacturingService = new ManufacturingService();

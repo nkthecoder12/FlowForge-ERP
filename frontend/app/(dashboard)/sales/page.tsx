@@ -1,6 +1,7 @@
 'use client';
 
 import { useSales } from '@/hooks/useSales';
+import { useAuth } from '@/hooks/useAuth';
 import SalesTable from '@/components/tables/SalesTable';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
@@ -15,6 +16,8 @@ import { format } from 'date-fns';
 export default function SalesPage() {
   const { useList, confirm, deliver, isConfirming, isDelivering } = useSales();
   const { data: orders, isLoading, isError } = useList();
+  const { user } = useAuth();
+  const isPMOrAdmin = user?.role === 'admin' || user?.role === 'product_manager';
 
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
@@ -219,36 +222,40 @@ export default function SalesPage() {
                         </span>
                       </div>
 
-                      {sh.hasBom ? (
-                        <div className="space-y-1.5 pl-2">
-                          <p className="text-[10px] text-text-secondary italic">BoM recipe exploded: {sh.bomName}</p>
-                          <div className="space-y-1">
-                            {sh.materialsNeeded.map((mat: any, mIdx: number) => {
-                              const isMissing = mat.shortage > 0;
-                              return (
-                                <div key={mIdx} className="flex justify-between items-center text-[11px] p-1.5 rounded bg-surface-input">
-                                  <span className="text-text-primary font-medium">{mat.product}</span>
-                                  <div className="flex items-center gap-3">
-                                    <span className="text-text-muted">
-                                      Needed: {mat.required} | Free: {mat.available}
-                                    </span>
-                                    {isMissing ? (
-                                      <span className="text-rose-500 font-bold bg-rose-500/10 px-1.5 py-0.5 rounded text-[10px]">
-                                        Shortage: {mat.shortage} {mat.unitOfMeasure}
+                      {isPMOrAdmin ? (
+                        sh.hasBom ? (
+                          <div className="space-y-1.5 pl-2">
+                            <p className="text-[10px] text-text-secondary italic">BoM recipe exploded: {sh.bomName}</p>
+                            <div className="space-y-1">
+                              {sh.materialsNeeded.map((mat: any, mIdx: number) => {
+                                const isMissing = mat.shortage > 0;
+                                return (
+                                  <div key={mIdx} className="flex justify-between items-center text-[11px] p-1.5 rounded bg-surface-input">
+                                    <span className="text-text-primary font-medium">{mat.product}</span>
+                                    <div className="flex items-center gap-3">
+                                      <span className="text-text-muted">
+                                        Needed: {mat.required} | Free: {mat.available}
                                       </span>
-                                    ) : (
-                                      <span className="text-emerald-500 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded text-[10px]">
-                                        Available
-                                      </span>
-                                    )}
+                                      {isMissing ? (
+                                        <span className="text-rose-500 font-bold bg-rose-500/10 px-1.5 py-0.5 rounded text-[10px]">
+                                          Shortage: {mat.shortage} {mat.unitOfMeasure}
+                                        </span>
+                                      ) : (
+                                        <span className="text-emerald-500 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded text-[10px]">
+                                          Available
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
-                                </div>
-                              );
-                            })}
+                                );
+                              })}
+                            </div>
                           </div>
-                        </div>
+                        ) : (
+                          <p className="text-[10px] text-rose-500 pl-2">No active BoM recipe found to explode components!</p>
+                        )
                       ) : (
-                        <p className="text-[10px] text-rose-500 pl-2">No active BoM recipe found to explode components!</p>
+                        <p className="text-[10px] text-text-muted pl-2 italic">Detailed component breakdown restricted to Admin/Product Manager.</p>
                       )}
                     </div>
                   ))}

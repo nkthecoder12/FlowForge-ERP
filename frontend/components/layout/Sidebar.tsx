@@ -40,7 +40,8 @@ const SECTIONS = [
     title: 'Supply Chain Operations',
     items: [
       { name: 'Manufacturing', path: '/manufacturing', icon: Hammer, roles: ['admin', 'product_manager'] },
-      { name: 'Procurement', path: '/procurement', icon: Truck, roles: ['admin', 'purchase'] },
+      { name: 'Procurement', path: '/procurement', icon: Truck, roles: ['admin', 'purchase', 'inventory'] },
+      { name: 'Vendor Directory', path: '/vendors', icon: Users, roles: ['admin', 'purchase'] },
       { name: 'Inventory', path: '/inventory', icon: Warehouse, roles: ['admin', 'inventory'] },
       { name: 'Stock Ledger', path: '/inventory/ledger', icon: BookOpen, roles: ['admin', 'inventory'] },
     ]

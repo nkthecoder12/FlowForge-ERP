@@ -1,6 +1,6 @@
 import prisma from '@/lib/server/db';
 import { createAuditLog } from '@/lib/server/utils/auditLog';
-import { generatePurchaseOrderNumber } from '../manufacturing/manufacturing.service';
+import { generatePurchaseOrderNumber } from '@/lib/server/utils/order-number';
 import { bomsService } from '../boms/boms.service';
 import type { UserRole } from '@prisma/client';
 
@@ -13,6 +13,8 @@ export class PurchaseService {
         },
         triggeredBySo: true,
         creator: { select: { name: true } },
+        quotations: true,
+        invoices: true,
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -27,6 +29,8 @@ export class PurchaseService {
         },
         triggeredBySo: true,
         creator: { select: { name: true } },
+        quotations: true,
+        invoices: true,
       },
     });
 
@@ -52,6 +56,20 @@ export class PurchaseService {
       });
     }
 
+    // Update quotations status in DB
+    await prisma.vendorQuotation.updateMany({
+      where: { purchaseOrderId: poId },
+      data: { status: 'rejected' },
+    });
+
+    await prisma.vendorQuotation.updateMany({
+      where: {
+        purchaseOrderId: poId,
+        vendorName: payload.vendorName,
+      },
+      data: { status: 'selected' },
+    });
+
     const updatedPo = await prisma.purchaseOrder.update({
       where: { id: poId },
       data: {
@@ -64,6 +82,8 @@ export class PurchaseService {
       include: {
         items: { include: { product: true } },
         triggeredBySo: true,
+        quotations: true,
+        invoices: true,
       },
     });
 
@@ -78,6 +98,85 @@ export class PurchaseService {
       newValues: {
         vendorName: payload.vendorName,
         totalAmount: payload.totalAmount,
+      },
+    });
+
+    return updatedPo;
+  }
+
+  async sendRFQ(
+    poId: string,
+    payload: { vendorNames: string[] },
+    actorId: string,
+    actorName: string,
+    actorRole: UserRole
+  ) {
+    const po = await this.getById(poId);
+
+    if (po.status !== 'draft') {
+      throw Object.assign(new Error('Can only send RFQ for draft requests'), {
+        statusCode: 400,
+      });
+    }
+
+    // Delete any existing quotations for this PO to allow retry/updates
+    await prisma.vendorQuotation.deleteMany({
+      where: { purchaseOrderId: poId },
+    });
+
+    // Create a quotation for each selected vendor
+    for (const vendorName of payload.vendorNames) {
+      const dbVendor = await prisma.vendor.findUnique({
+        where: { name: vendorName },
+      });
+
+      const charSum = vendorName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+      const factor = 0.85 + ((charSum % 30) / 100);
+      const days = 1 + (charSum % 6);
+      const rating = parseFloat((4.0 + ((charSum % 10) / 10)).toFixed(1));
+      
+      const baseCost = Number(po.totalAmount) || 1000;
+      const totalAmount = Math.round(baseCost * factor);
+
+      await prisma.vendorQuotation.create({
+        data: {
+          purchaseOrderId: poId,
+          vendorName,
+          vendorEmail: dbVendor?.email || `${vendorName.toLowerCase().replace(/\s+/g, '')}@supplier.com`,
+          vendorPhone: dbVendor?.phone || `+91 ${90000 + (charSum % 10000)} ${50000 + (charSum % 50000)}`,
+          totalAmount,
+          deliveryDays: days,
+          rating,
+          status: 'pending',
+        },
+      });
+    }
+
+    const updatedPo = await prisma.purchaseOrder.update({
+      where: { id: poId },
+      data: {
+        vendorName: 'RFQ Sent (Pending Bids)',
+        notes: `${po.notes || ''}\n\n[RFQ Sent] Procurement request verified. RFQs dispatched to selected vendors: ${payload.vendorNames.join(', ')}`,
+      },
+      include: {
+        items: { include: { product: true } },
+        triggeredBySo: true,
+        quotations: true,
+        invoices: true,
+      },
+    });
+
+    await createAuditLog({
+      userId: actorId,
+      userName: actorName,
+      userRole: actorRole,
+      action: 'purchase_order_created',
+      entityType: 'purchase_order',
+      entityId: po.id,
+      entityName: po.orderNumber,
+      newValues: {
+        vendorName: 'RFQ Sent (Pending Bids)',
+        requestedVendors: payload.vendorNames,
       },
     });
 
@@ -104,17 +203,33 @@ export class PurchaseService {
       });
     }
 
+    // Generate a unique invoice number
+    const invoiceNumber = `INV-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+
+    // Create the invoice
+    await prisma.invoice.create({
+      data: {
+        invoiceNumber,
+        purchaseOrderId: poId,
+        vendorName: po.vendorName,
+        amount: po.totalAmount,
+        status: 'pending',
+      },
+    });
+
     const updatedPo = await prisma.purchaseOrder.update({
       where: { id: poId },
       data: {
         status: 'confirmed',
         confirmedBy: actorId,
         confirmedAt: new Date(),
-        notes: `${po.notes || ''}\n\nPurchase Order confirmed and dispatched to supplier. Delivery pending tracking.`,
+        notes: `${po.notes || ''}\n\n[PO Dispatched & Shared] Purchase Order confirmed and dispatched to vendor: ${po.vendorName} (${po.vendorEmail || 'pending email'}). Notification CC'd to Inventory Manager (neha@shivfurniture.com) for incoming tracking.`,
       },
       include: {
         items: { include: { product: true } },
         triggeredBySo: true,
+        quotations: true,
+        invoices: true,
       },
     });
 
@@ -181,6 +296,11 @@ export class PurchaseService {
           });
         }
 
+        await tx.invoice.updateMany({
+          where: { purchaseOrderId: poId },
+          data: { status: 'verified' },
+        });
+
         return tx.purchaseOrder.update({
           where: { id: poId },
           data: {
@@ -192,6 +312,8 @@ export class PurchaseService {
           include: {
             items: { include: { product: true } },
             triggeredBySo: true,
+            quotations: true,
+            invoices: true,
           },
         });
       });
@@ -291,6 +413,87 @@ export class PurchaseService {
 
       return updatedPo;
     }
+  }
+
+  async create(
+    payload: { productId: string; quantity: number },
+    actorId: string,
+    actorName: string,
+    actorRole: UserRole
+  ) {
+    const { productId, quantity } = payload;
+
+    if (quantity <= 0) {
+      throw Object.assign(new Error('Quantity must be greater than 0'), { statusCode: 400 });
+    }
+
+    const product = await prisma.product.findUnique({
+      where: { id: productId },
+    });
+
+    if (!product) {
+      throw Object.assign(new Error('Product not found'), { statusCode: 404 });
+    }
+
+    if (product.procurementType !== 'purchase') {
+      throw Object.assign(
+        new Error(`Cannot create purchase order for product ${product.name} with procurement type ${product.procurementType}`),
+        { statusCode: 400 }
+      );
+    }
+
+    const costPrice = Number(product.costPrice) || 0;
+    const totalAmount = costPrice * quantity;
+
+    const po = await prisma.$transaction(async (tx) => {
+      const orderNumber = await generatePurchaseOrderNumber(tx);
+
+      const createdPo = await tx.purchaseOrder.create({
+        data: {
+          orderNumber,
+          vendorName: 'Recommended Vendor (Pending Quote)',
+          status: 'draft',
+          totalAmount,
+          createdBy: actorId,
+          notes: `Manually requested procurement of raw material ${product.name} (SKU: ${product.sku}).`,
+          items: {
+            create: [
+              {
+                productId,
+                quantityOrdered: quantity,
+                unitCost: costPrice,
+              },
+            ],
+          },
+        },
+        include: {
+          items: {
+            include: { product: true },
+          },
+          creator: { select: { name: true } },
+          triggeredBySo: true,
+        },
+      });
+
+      return createdPo;
+    });
+
+    await createAuditLog({
+      userId: actorId,
+      userName: actorName,
+      userRole: actorRole,
+      action: 'purchase_order_created',
+      entityType: 'purchase_order',
+      entityId: po.id,
+      entityName: po.orderNumber,
+      newValues: {
+        productId,
+        quantity,
+        totalAmount,
+      },
+    });
+
+    return po;
   }
 }
 

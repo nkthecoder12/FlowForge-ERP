@@ -34,10 +34,27 @@ export const usePurchase = () => {
     },
   });
 
+  const sendRFQMutation = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: { vendorNames: string[] } }) =>
+      purchaseApi.sendRFQ(id, payload),
+    onSuccess: (_data, vars) => {
+      toast.success('Procurement verified & RFQs sent successfully!');
+      queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['purchase-order', vars.id] });
+      queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to send RFQs');
+    },
+  });
+
   const confirmMutation = useMutation({
     mutationFn: purchaseApi.confirm,
     onSuccess: (data, id) => {
-      toast.success('Purchase Order confirmed and dispatched!');
+      const emailStr = data?.vendorEmail ? ` to ${data.vendorName} (${data.vendorEmail})` : '';
+      toast.success(`Purchase Order confirmed and dispatched${emailStr}! Shared with Inventory Manager for tracking.`, {
+        duration: 6000,
+      });
       queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
       queryClient.invalidateQueries({ queryKey: ['purchase-order', id] });
       queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
@@ -65,14 +82,31 @@ export const usePurchase = () => {
     },
   });
 
+  const createMutation = useMutation({
+    mutationFn: purchaseApi.create,
+    onSuccess: () => {
+      toast.success('Procurement request raised!');
+      queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to raise procurement request');
+    },
+  });
+
   return {
     useList,
     useGet,
     selectQuotation: selectQuotationMutation.mutateAsync,
     isSelectingQuotation: selectQuotationMutation.isPending,
+    sendRFQ: sendRFQMutation.mutateAsync,
+    isSendingRFQ: sendRFQMutation.isPending,
     confirm: confirmMutation.mutateAsync,
     isConfirming: confirmMutation.isPending,
     receive: receiveMutation.mutateAsync,
     isReceiving: receiveMutation.isPending,
+    create: createMutation.mutateAsync,
+    isCreating: createMutation.isPending,
   };
 };
