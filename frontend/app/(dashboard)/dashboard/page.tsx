@@ -44,6 +44,7 @@ import { productsApi } from '@/services/products.api';
 import { salesApi } from '@/services/sales.api';
 import { inventoryApi } from '@/services/inventory.api';
 import toast from 'react-hot-toast';
+import { useVendors } from '@/hooks/useVendors';
 
 export default function DashboardPage() {
   const queryClient = useQueryClient();
@@ -51,6 +52,31 @@ export default function DashboardPage() {
   const { data, isLoading, isError } = useStats();
   const { user } = useAuth();
   const userRole = user?.role || 'sales';
+
+  // --- Vendor Registry Hooks & State ---
+  const { useList: useVendorsList, createVendor, isCreating: isCreatingVendor } = useVendors();
+  const { data: vendorsList } = useVendorsList();
+
+  const [newVendorName, setNewVendorName] = useState('');
+  const [newVendorEmail, setNewVendorEmail] = useState('');
+  const [newVendorPhone, setNewVendorPhone] = useState('');
+
+  const handleAddVendor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newVendorName) return;
+    try {
+      await createVendor({
+        name: newVendorName,
+        email: newVendorEmail,
+        phone: newVendorPhone,
+      });
+      setNewVendorName('');
+      setNewVendorEmail('');
+      setNewVendorPhone('');
+    } catch (err) {
+      // Handled by toast
+    }
+  };
 
   // --- State for Inline Quick Actions ---
   // Sales Order Quick Create
@@ -724,7 +750,7 @@ export default function DashboardPage() {
             <div className="kpi-card flex items-center justify-between">
               <div className="space-y-1">
                 <p className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Active POs in Transit</p>
-                <p className="text-2xl font-bold text-blue-600 tracking-tight">{kpis.runningManufacturingRuns ?? 2}</p>
+                <p className="text-2xl font-bold text-blue-600 tracking-tight">{(data as any).inTransitPurchaseOrders?.length || 0}</p>
                 <p className="text-[10px] text-text-secondary font-semibold">Incoming cargo checks</p>
               </div>
               <div className="p-3 rounded-xl bg-blue-50 text-blue-600 shrink-0">
@@ -837,43 +863,143 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Open Purchase Orders / RFQs */}
-          <div className="glass-card p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-sm text-[#4B164C]">Open Purchase Requests & RFQs</h3>
-              <Link href="/procurement" className="text-xs font-semibold text-brand-primary hover:underline">Compare RFQs →</Link>
-            </div>
-            <div className="overflow-x-auto text-xs">
-              <table className="erp-table text-left">
-                <thead>
-                  <tr>
-                    <th>Item Requested</th>
-                    <th>Current Stock</th>
-                    <th>Suggested Buy</th>
-                    <th>Days Remaining</th>
-                    <th>Procurement Vendor</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {smartProcurementRecommendations?.slice(2, 5).map((rec: any) => (
-                    <tr key={rec.sku}>
-                      <td className="font-bold text-text-primary">{rec.name}</td>
-                      <td>{rec.currentStock} units</td>
-                      <td className="font-bold text-[#4B164C]">{rec.suggestedOrder} pcs</td>
-                      <td>
-                        <span className="text-rose-600 font-semibold">{rec.daysRemaining} days</span>
-                      </td>
-                      <td>{rec.preferredVendor}</td>
-                      <td>
-                        <Link href="/procurement" className="text-[10px] font-bold text-brand-primary bg-[#F8E7F6] px-2 py-1 rounded hover:bg-[#F8E7F6]/80">
-                          Configure RFQ
-                        </Link>
-                      </td>
+          {/* Real Purchase Orders and Vendor registry grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Open Purchase Requests & RFQs */}
+            <div className="glass-card p-5 space-y-4 lg:col-span-2">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-sm text-[#4B164C]">Open Purchase Requests & RFQs</h3>
+                <Link href="/procurement" className="text-xs font-semibold text-brand-primary hover:underline">Procurement Workspace →</Link>
+              </div>
+              <div className="overflow-x-auto text-xs">
+                <table className="erp-table text-left">
+                  <thead>
+                    <tr>
+                      <th>PO Number</th>
+                      <th>Items & Quantities Requested</th>
+                      <th>Status</th>
+                      <th>Requested By</th>
+                      <th>Action</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {(data as any).pendingPurchaseOrders && (data as any).pendingPurchaseOrders.length > 0 ? (
+                      (data as any).pendingPurchaseOrders.map((po: any) => {
+                        return (
+                          <tr key={po.id} className="align-middle">
+                            <td className="p-4 font-mono font-bold text-brand-primary text-xs">
+                              {po.orderNumber}
+                            </td>
+                            <td className="p-4">
+                              <div className="flex flex-col gap-1.5 max-w-md">
+                                {po.items?.map((item: any, idx: number) => (
+                                  <div key={idx} className="flex justify-between items-center bg-[#F8E7F6]/10 border border-brand-accent/15 rounded-lg p-2 font-medium text-xs text-text-primary">
+                                    <div className="flex flex-col">
+                                      <span className="font-bold">{item.product?.name}</span>
+                                      <span className="text-[10px] text-text-muted font-mono">SKU: {item.product?.sku}</span>
+                                    </div>
+                                    <span className="font-extrabold text-[#4B164C] bg-[#F8E7F6] px-2 py-0.5 rounded text-[11px] whitespace-nowrap ml-4">
+                                      {Number(item.quantityOrdered)} {item.product?.unitOfMeasure}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="p-4">
+                              <Badge
+                                variant={
+                                  po.vendorName === 'Recommended Vendor (Pending Quote)'
+                                    ? 'gray'
+                                    : po.vendorName === 'RFQ Sent (Pending Bids)'
+                                    ? 'purple'
+                                    : 'blue'
+                                }
+                              >
+                                {po.vendorName === 'Recommended Vendor (Pending Quote)'
+                                  ? 'PENDING VERIFICATION'
+                                  : po.vendorName === 'RFQ Sent (Pending Bids)'
+                                  ? 'RFQ SENT'
+                                  : 'PO DRAFT'}
+                              </Badge>
+                            </td>
+                            <td className="p-4 font-medium text-text-secondary">{po.creator?.name || 'System'}</td>
+                            <td className="p-4">
+                              <Link
+                                href="/procurement"
+                                className="text-[10px] font-bold text-white bg-[#4B164C] hover:bg-[#381039] px-2.5 py-1.5 rounded-lg transition-colors inline-block whitespace-nowrap"
+                              >
+                                {po.vendorName === 'Recommended Vendor (Pending Quote)' ? 'Verify & Request' : 'Compare Quotes'}
+                              </Link>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td colSpan={5} className="text-center p-8 text-text-muted">
+                          No pending raw material purchase requests.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Vendor Registry & Creation Widget */}
+            <div className="glass-card p-5 space-y-4 lg:col-span-1">
+              <h3 className="font-bold text-sm text-[#4B164C]">Vendor Directory</h3>
+              
+              {/* Add Vendor Form */}
+              <form onSubmit={handleAddVendor} className="space-y-2 p-3 bg-slate-50 border border-surface-border rounded-xl">
+                <p className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Register Vendor Partner</p>
+                <input
+                  type="text"
+                  placeholder="Vendor Name *"
+                  value={newVendorName}
+                  onChange={(e) => setNewVendorName(e.target.value)}
+                  className="input-field py-1 px-2.5 h-8 text-[11px] focus:bg-white"
+                  required
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="email"
+                    placeholder="Email Address"
+                    value={newVendorEmail}
+                    onChange={(e) => setNewVendorEmail(e.target.value)}
+                    className="input-field py-1 px-2.5 h-8 text-[11px] focus:bg-white"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Phone Number"
+                    value={newVendorPhone}
+                    onChange={(e) => setNewVendorPhone(e.target.value)}
+                    className="input-field py-1 px-2.5 h-8 text-[11px] focus:bg-white"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isCreatingVendor}
+                  className="w-full h-8 text-xs font-semibold bg-[#4B164C] hover:bg-[#381039] text-white rounded-lg transition-colors flex items-center justify-center"
+                >
+                  {isCreatingVendor ? 'Adding...' : 'Add Vendor'}
+                </button>
+              </form>
+
+              {/* Vendors List */}
+              <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                {vendorsList && vendorsList.length > 0 ? (
+                  vendorsList.map((v: any) => (
+                    <div key={v.id} className="p-2 border border-slate-100 rounded-lg hover:bg-slate-50 transition-colors text-[11px]">
+                      <p className="font-bold text-text-primary">{v.name}</p>
+                      {v.email && <p className="text-[10px] text-text-secondary">{v.email}</p>}
+                      {v.phone && <p className="text-[10px] text-text-secondary">{v.phone}</p>}
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-text-muted text-center py-4">No registered vendors yet.</p>
+                )}
+              </div>
             </div>
           </div>
         </>
@@ -1034,6 +1160,66 @@ export default function DashboardPage() {
                   Confirm Stock Adjustment Ledger
                 </button>
               </form>
+            </div>
+          </div>
+
+          {/* Incoming cargo tracking for Inventory Managers */}
+          <div className="glass-card p-5 space-y-4">
+            <h3 className="font-bold text-sm text-[#4B164C] flex items-center gap-1.5">
+              <Truck size={16} className="text-blue-600" /> Incoming Raw Materials (Purchase Orders in Transit)
+            </h3>
+            <div className="overflow-x-auto text-xs">
+              <table className="erp-table text-left">
+                <thead>
+                  <tr>
+                    <th>PO Number</th>
+                    <th>Supplier / Vendor</th>
+                    <th>Product details</th>
+                    <th>Quantity ordered</th>
+                    <th>Date Dispatched</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data as any).inTransitPurchaseOrders && (data as any).inTransitPurchaseOrders.length > 0 ? (
+                    (data as any).inTransitPurchaseOrders.map((po: any) => {
+                      const firstItem = po.items?.[0];
+                      const productName = firstItem?.product?.name || 'Unknown';
+                      const qty = firstItem ? `${Number(firstItem.quantityOrdered)} ${firstItem.product?.unitOfMeasure || 'pcs'}` : '0 pcs';
+
+                      return (
+                        <tr key={po.id}>
+                          <td className="font-mono font-bold text-brand-primary">{po.orderNumber}</td>
+                          <td className="font-semibold text-text-primary">
+                            <div>
+                              <span>{po.vendorName}</span>
+                              {po.vendorPhone && <p className="text-[9px] text-text-muted mt-0.5">{po.vendorPhone}</p>}
+                            </div>
+                          </td>
+                          <td>{productName}</td>
+                          <td className="font-bold text-[#4B164C]">{qty}</td>
+                          <td>{po.confirmedAt ? format(new Date(po.confirmedAt), 'dd MMM yyyy, hh:mm a') : 'N/A'}</td>
+                          <td>
+                            <Badge variant="blue">IN TRANSIT</Badge>
+                          </td>
+                          <td>
+                            <Link href="/procurement" className="text-[10px] font-bold text-brand-primary bg-[#F8E7F6] px-2 py-1 rounded hover:bg-[#F8E7F6]/80 whitespace-nowrap">
+                              Inspect & Verify
+                            </Link>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={7} className="text-center p-8 text-text-muted">
+                        No purchase orders currently in transit.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
 

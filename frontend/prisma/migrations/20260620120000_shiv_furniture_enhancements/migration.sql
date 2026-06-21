@@ -1,5 +1,10 @@
 -- Shiv Furniture Works ERP schema enhancements
-CREATE TYPE "ProductType" AS ENUM ('raw_material', 'finished_good');
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ProductType') THEN
+        CREATE TYPE "ProductType" AS ENUM ('raw_material', 'finished_good');
+    END IF;
+END$$;
 
 ALTER TYPE "MovementType" ADD VALUE IF NOT EXISTS 'stock_release';
 ALTER TYPE "AuditAction" ADD VALUE IF NOT EXISTS 'shortage_detected';

@@ -16,6 +16,17 @@ import { Button } from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
 import Alert from '@/components/ui/Alert';
 
+const safeFormatDate = (dateVal: any, formatStr = 'MMM d, HH:mm') => {
+  if (!dateVal) return '';
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return '';
+  try {
+    return format(d, formatStr);
+  } catch {
+    return '';
+  }
+};
+
 export default function SalesOrderDetailPage() {
   const params = useParams();
   const id = params.id as string;
@@ -24,6 +35,7 @@ export default function SalesOrderDetailPage() {
   const { create: requestProduction, isCreating: isRequestingProduction } = useManufacturing();
   const { user } = useAuth();
   const userRole = user?.role || 'sales';
+  const isPMOrAdmin = userRole === 'admin' || userRole === 'product_manager';
   const { data: order, isLoading, isError } = useGet(id);
 
   if (isLoading) {
@@ -135,12 +147,16 @@ export default function SalesOrderDetailPage() {
     let pmStatus: 'checked' | 'pending' | 'failed' = 'pending';
     let pmDetails = 'Awaiting decision on production feasibility.';
     let pmTimestamp = undefined;
+    let pmLabel = 'PM Approved';
     if (hasMo) {
-      const isRejected = mos.some((m: any) => m.status === 'cancelled');
-      const isApproved = mos.some((m: any) => ['confirmed', 'in_progress', 'completed'].includes(m.status));
+      const isRejected = primaryMo.status === 'cancelled';
+      const isApproved = ['confirmed', 'in_progress', 'completed'].includes(primaryMo.status);
       if (isRejected) {
         pmStatus = 'failed';
-        pmDetails = 'Rejection reason: Capacity constraints or material missing.';
+        pmLabel = 'Rejected Criteria';
+        const rejectMatch = primaryMo.notes?.match(/Reason:\s*([^\n\r]+)/);
+        const reasonStr = rejectMatch ? rejectMatch[1] : 'Capacity constraints or material missing';
+        pmDetails = `Rejection reason: ${reasonStr}.`;
         pmTimestamp = primaryMo.updatedAt;
       } else if (isApproved) {
         pmStatus = 'checked';
@@ -149,7 +165,7 @@ export default function SalesOrderDetailPage() {
       }
     }
     timelineItems.push({
-      label: 'PM Approved',
+      label: pmLabel,
       status: pmStatus,
       timestamp: pmTimestamp,
       owner: 'Ravi Sharma',
@@ -199,7 +215,12 @@ export default function SalesOrderDetailPage() {
     if (pmStatus === 'checked') {
       procStatus = 'checked';
       if (hasPo) {
-        procDetails = `Draft RFQs generated: ${pos.map((p: any) => p.orderNumber).join(', ')}`;
+        const isVerified = pos.some((p: any) => p.vendorName !== 'Recommended Vendor (Pending Quote)');
+        if (isVerified) {
+          procDetails = `Procurement verified. RFQs sent: ${pos.map((p: any) => p.orderNumber).join(', ')}`;
+        } else {
+          procDetails = `Draft procurement raised: ${pos.map((p: any) => p.orderNumber).join(', ')} (Awaiting verification)`;
+        }
       } else {
         procDetails = 'Skipped: Sufficient raw materials available on hand.';
       }
@@ -221,6 +242,9 @@ export default function SalesOrderDetailPage() {
       if (hasPo) {
         const allConfirmed = pos.every((p: any) => ['confirmed', 'received'].includes(p.status));
         const anyCancelled = pos.some((p: any) => p.status === 'cancelled');
+        const isVerified = pos.some((p: any) => p.vendorName !== 'Recommended Vendor (Pending Quote)');
+        const hasSelectedVendor = pos.some((p: any) => p.vendorName !== 'Recommended Vendor (Pending Quote)' && p.vendorName !== 'RFQ Sent (Pending Bids)');
+
         if (allConfirmed) {
           vendorStatus = 'checked';
           vendorDetails = `Vendor approved. Purchase orders dispatch locked.`;
@@ -229,9 +253,17 @@ export default function SalesOrderDetailPage() {
           vendorStatus = 'failed';
           vendorDetails = 'Vendor quote selection failed or PO cancelled.';
           vendorTimestamp = primaryPo.updatedAt;
+        } else if (hasSelectedVendor) {
+          const selectedVendorName = pos.find((p: any) => p.vendorName !== 'Recommended Vendor (Pending Quote)' && p.vendorName !== 'RFQ Sent (Pending Bids)')?.vendorName || '';
+          vendorStatus = 'checked';
+          vendorDetails = `Vendor quote selected: ${selectedVendorName}. Awaiting PO dispatch.`;
+          vendorTimestamp = primaryPo.updatedAt;
+        } else if (isVerified) {
+          vendorStatus = 'pending';
+          vendorDetails = 'RFQ sent. Comparing vendor quotes.';
         } else {
           vendorStatus = 'pending';
-          vendorDetails = 'Comparing vendor cost and lead times.';
+          vendorDetails = 'Awaiting procurement manager verification & RFQ target selection.';
         }
       } else {
         vendorStatus = 'checked';
@@ -479,36 +511,40 @@ export default function SalesOrderDetailPage() {
                       </span>
                     </div>
 
-                    {sh.hasBom ? (
-                      <div className="space-y-2">
-                        <p className="text-xs text-text-secondary italic">Exploding BOM recipe: {sh.bomName}</p>
-                        <div className="space-y-1.5">
-                          {sh.materialsNeeded.map((mat: any, mIdx: number) => {
-                            const isMissing = mat.shortage > 0;
-                            return (
-                              <div key={mIdx} className="flex justify-between items-center text-xs p-2.5 rounded bg-surface-input border border-surface-border/50">
-                                <span className="text-text-primary font-semibold">{mat.productName || mat.product}</span>
-                                <div className="flex items-center gap-4">
-                                  <span className="text-text-secondary text-xs">
-                                    Needed: {mat.required} | Free: {mat.available}
-                                  </span>
-                                  {isMissing ? (
-                                    <span className="text-rose-500 font-bold bg-rose-500/10 px-2 py-0.5 rounded text-xs">
-                                      Missing: {mat.shortage} {mat.unitOfMeasure}
+                    {isPMOrAdmin ? (
+                      sh.hasBom ? (
+                        <div className="space-y-2">
+                          <p className="text-xs text-text-secondary italic">Exploding BOM recipe: {sh.bomName}</p>
+                          <div className="space-y-1.5">
+                            {sh.materialsNeeded.map((mat: any, mIdx: number) => {
+                              const isMissing = mat.shortage > 0;
+                              return (
+                                <div key={mIdx} className="flex justify-between items-center text-xs p-2.5 rounded bg-surface-input border border-surface-border/50">
+                                  <span className="text-text-primary font-semibold">{mat.productName || mat.product}</span>
+                                  <div className="flex items-center gap-4">
+                                    <span className="text-text-secondary text-xs">
+                                      Needed: {mat.required} | Free: {mat.available}
                                     </span>
-                                  ) : (
-                                    <span className="text-emerald-500 font-bold bg-emerald-500/10 px-2 py-0.5 rounded text-xs">
-                                      Available
-                                    </span>
-                                  )}
+                                    {isMissing ? (
+                                      <span className="text-rose-500 font-bold bg-rose-500/10 px-2 py-0.5 rounded text-xs">
+                                        Missing: {mat.shortage} {mat.unitOfMeasure}
+                                      </span>
+                                    ) : (
+                                      <span className="text-emerald-500 font-bold bg-emerald-500/10 px-2 py-0.5 rounded text-xs">
+                                        Available
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            );
-                          })}
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
+                      ) : (
+                        <p className="text-xs text-rose-500 pl-2">No active BoM recipe found to explode components!</p>
+                      )
                     ) : (
-                      <p className="text-xs text-rose-500 pl-2">No active BoM recipe found to explode components!</p>
+                      <p className="text-xs text-text-muted pl-2 italic">Detailed component breakdown restricted to Admin/Product Manager.</p>
                     )}
                   </div>
                 ))}
@@ -602,9 +638,9 @@ export default function SalesOrderDetailPage() {
                         <span className={`font-bold ${isPending ? 'text-text-muted' : isFailed ? 'text-rose-500' : 'text-text-primary'}`}>
                           {step.label}
                         </span>
-                        {step.timestamp && (
+                        {step.timestamp && safeFormatDate(step.timestamp) && (
                           <span className="text-[10px] text-text-muted whitespace-nowrap font-medium">
-                            {format(new Date(step.timestamp), 'MMM d, HH:mm')}
+                            {safeFormatDate(step.timestamp)}
                           </span>
                         )}
                       </div>

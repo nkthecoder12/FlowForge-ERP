@@ -279,6 +279,8 @@ model PurchaseOrder {
   receiver         User?                @relation("PurchaseOrderReceiver", fields: [receivedBy], references: [id], onDelete: SetNull)
   items            PurchaseOrderItem[]
   inventoryMovements InventoryMovement[]
+  quotations       VendorQuotation[]
+  invoices         Invoice[]
 
   @@index([orderNumber])
   @@index([status])
@@ -388,3 +390,48 @@ model AuditLog {
   @@index([createdAt])
   @@map("audit_logs")
 }
+
+model Vendor {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique @db.VarChar(200)
+  email     String?  @db.VarChar(150)
+  phone     String?  @db.VarChar(50)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("vendors")
+}
+
+model VendorQuotation {
+  id              String        @id @default(uuid()) @db.Uuid
+  purchaseOrderId String        @map("purchase_order_id") @db.Uuid
+  vendorName      String        @map("vendor_name") @db.VarChar(200)
+  vendorEmail     String?       @map("vendor_email") @db.VarChar(150)
+  vendorPhone     String?       @map("vendor_phone") @db.VarChar(50)
+  totalAmount     Decimal       @map("total_amount") @db.Decimal(14, 2)
+  deliveryDays    Int           @map("delivery_days")
+  rating          Decimal?      @db.Decimal(3, 2)
+  status          String        @default("pending") @db.VarChar(50) // pending, selected, rejected
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@map("vendor_quotations")
+  @@index([purchaseOrderId])
+}
+
+model Invoice {
+  id              String        @id @default(uuid()) @db.Uuid
+  invoiceNumber   String        @unique @map("invoice_number") @db.VarChar(100)
+  purchaseOrderId String        @map("purchase_order_id") @db.Uuid
+  vendorName      String        @map("vendor_name") @db.VarChar(200)
+  amount          Decimal       @db.Decimal(14, 2)
+  status          String        @default("pending") @db.VarChar(50) // pending, verified
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  @@map("invoices")
+  @@index([purchaseOrderId])
+}
+

@@ -13,6 +13,8 @@ export class DashboardService {
       recentSalesOrders,
       runningMosCount,
       pendingMosCount,
+      pendingPurchaseOrders,
+      inTransitPurchaseOrders,
     ] = await Promise.all([
       prisma.product.count({ where: { isActive: true } }),
       prisma.salesOrder.count(),
@@ -60,6 +62,24 @@ export class DashboardService {
       }),
       prisma.manufacturingOrder.count({ where: { status: 'in_progress' } }),
       prisma.manufacturingOrder.count({ where: { status: { in: ['draft', 'confirmed'] } } }),
+      prisma.purchaseOrder.findMany({
+        where: { status: 'draft' },
+        include: {
+          items: { include: { product: true } },
+          triggeredBySo: true,
+          creator: { select: { name: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.purchaseOrder.findMany({
+        where: { status: { in: ['confirmed', 'partially_received'] } },
+        include: {
+          items: { include: { product: true } },
+          triggeredBySo: true,
+          creator: { select: { name: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
     ]);
 
     let totalInventoryValue = 0;
@@ -134,6 +154,8 @@ export class DashboardService {
         preferredVendor: m.reason,
         riskScore: m.urgency,
       })),
+      pendingPurchaseOrders,
+      inTransitPurchaseOrders,
       aiInsights,
     };
   }

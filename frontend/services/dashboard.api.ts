@@ -74,6 +74,8 @@ export interface DashboardStats {
     preferredVendor: string;
     riskScore: string;
   }[];
+  pendingPurchaseOrders?: any[];
+  inTransitPurchaseOrders?: any[];
   aiInsights?: any;
 }
 

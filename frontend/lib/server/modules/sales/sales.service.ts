@@ -16,6 +16,18 @@ export class SalesService {
         items: {
           include: { product: true },
         },
+        manufacturingOrders: {
+          include: {
+            product: true,
+            creator: { select: { name: true } },
+          },
+        },
+        purchaseOrders: {
+          include: {
+            items: { include: { product: true } },
+            creator: { select: { name: true } },
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });

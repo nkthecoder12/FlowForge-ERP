@@ -12,6 +12,29 @@ export interface ApiPurchaseOrderItem {
   product: ApiProduct;
 }
 
+export interface ApiVendorQuotation {
+  id: string;
+  purchaseOrderId: string;
+  vendorName: string;
+  vendorEmail?: string;
+  vendorPhone?: string;
+  totalAmount: string | number;
+  deliveryDays: number;
+  rating?: string | number;
+  status: 'pending' | 'selected' | 'rejected';
+  createdAt: string;
+}
+
+export interface ApiInvoice {
+  id: string;
+  invoiceNumber: string;
+  purchaseOrderId: string;
+  vendorName: string;
+  amount: string | number;
+  status: 'pending' | 'verified';
+  createdAt: string;
+}
+
 export interface ApiPurchaseOrder {
   id: string;
   orderNumber: string;
@@ -30,11 +53,18 @@ export interface ApiPurchaseOrder {
   creator?: {
     name: string;
   };
+  quotations?: ApiVendorQuotation[];
+  invoices?: ApiInvoice[];
 }
 
 export const purchaseApi = {
   list: async (): Promise<ApiPurchaseOrder[]> => {
     const res = await api.get('/purchase');
+    return res.data.data;
+  },
+
+  create: async (payload: { productId: string; quantity: number }): Promise<ApiPurchaseOrder> => {
+    const res = await api.post('/purchase', payload);
     return res.data.data;
   },
 
@@ -48,6 +78,14 @@ export const purchaseApi = {
     payload: { vendorName: string; vendorEmail?: string; vendorPhone?: string; totalAmount: number }
   ): Promise<ApiPurchaseOrder> => {
     const res = await api.post(`/purchase/${id}/quotation`, payload);
+    return res.data.data;
+  },
+
+  sendRFQ: async (
+    id: string,
+    payload: { vendorNames: string[] }
+  ): Promise<ApiPurchaseOrder> => {
+    const res = await api.post(`/purchase/${id}/rfq`, payload);
     return res.data.data;
   },
 
