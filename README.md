@@ -9,7 +9,7 @@ FlowForge ERP is an enterprise-grade Operations Control System (OCS) designed sp
 ## Vision & Industry Context
 
 ### Why FlowForge Exists
-Traditional ERP solutions—like legacy SAP, Oracle, and basic Odoo implementations—are notoriously complex data graveyards. They are retrospectively input-heavy, recording transaction history *after* delays or stockouts have already disrupted the floor. For medium-sized manufacturers (such as furniture works, machinery fabricators, and assembly plants), a single missing screw, panel, or varnish coat can stall a machine line, freeze work-in-progress (WIP) capital, and lead to missed delivery SLAs.
+Traditional ERP solutions—like legacy SAP, Oracle are notoriously complex data graveyards. They are retrospectively input-heavy, recording transaction history *after* delays or stockouts have already disrupted the floor. For medium-sized manufacturers (such as furniture works, machinery fabricators, and assembly plants), a single missing screw, panel, or varnish coat can stall a machine line, freeze work-in-progress (WIP) capital, and lead to missed delivery SLAs.
 
 FlowForge ERP introduces the concept of **active business routing**. Instead of waiting for weekly audits, the platform executes real-time transactional checks at every step of the order lifecycle:
 1. **Predictive Dependency Allocation**: Prevents double-allocating free inventory.
