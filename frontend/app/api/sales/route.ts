@@ -18,6 +18,7 @@ export async function GET() {
 export async function POST(request: Request) {
   return handleRoute(async () => {
     const actor = await requireRole('admin', 'sales');
+    console.log('[DEBUG] create sales order actor:', actor);
     if (isErrorResponse(actor)) return actor;
 
     const body = await request.json();
